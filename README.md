@@ -1,5 +1,6 @@
 # EC-TP2
 
+Authors: Pedro Carvalho & Miguel Guimarães
 Este trabalho usa SageMath nas suas implementações
 
 
