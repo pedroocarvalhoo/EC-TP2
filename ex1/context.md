@@ -4,7 +4,7 @@
 Qualquer PKE é determinado por três algoritmos: geração de chaves, cifra e decifra.
 
 # ElGamal 
-Check: https://www.youtube.com/watch?v=hyZsbqT7Q2A\
+Check: https://www.youtube.com/watch?v=hyZsbqT7Q2A \
 No contexto de ataques IND-CPA apenas a geração de chaves e cifra são relevantes e apenas a chave pública é relevante.
 
 - $ GenKeys(λ) $ → $\lambda$ é o parâmetro de segurança
@@ -13,7 +13,7 @@ No contexto de ataques IND-CPA apenas a geração de chaves e cifra são relevan
     - gerar aleatoriamente  $\,0 <s < q\,$ ,  a chave privada
     - calcular e  revelar  a chave pública   $\,\mathsf{pk} \equiv \langle p,q, g,g^s\rangle$
 
-- $Enc(pk,m)  $ → a mensagem $m$ é um elemento de $\mathbb{F}_p^\ast$
+- $ Enc(pk,m)  $ → a mensagem $m$ é um elemento de $\mathbb{F}_p^\ast$
     - obter elementos públicos  $\,p,q,g,g^s \,\gets\,\mathsf{pk}$
     - gerar aleatoriamente  $\,0 <\omega < q$ 
     - calcular  $\,\gamma \gets g^\omega\;$ e $\,\kappa \gets (g^s)^\omega\,$.
@@ -21,22 +21,22 @@ No contexto de ataques IND-CPA apenas a geração de chaves e cifra são relevan
 
 ## Legenda das Variáveis no Esquema de ElGamal (IND-CPA)
 
-### **Geração de Chaves (`GenKeys(λ)`)**  
+### **Key Generation (`GenKeys(λ)`)**  
 - **`λ`** → Parâmetro de segurança (define o tamanho dos números usados).  
-- **`q`** → Número primo grande, aproximadamente \( 2^\lambda \), define a ordem do subgrupo.  
-- **`p`** → Número primo tal que \( \mathbb{F}_p^\ast \) tem um subgrupo de ordem \( q \).  
+- **`q`** → Número primo grande, aproximadamente $2^λ$, define a ordem do subgrupo.  
+- **`p`** → Número primo tal que  tem um subgrupo de ordem \( q \).  
 - **`g`** → Gerador do subgrupo de ordem \( q \).  
-- **`s`** → Chave privada, escolhida aleatoriamente no intervalo \( (0, q) \).  
-- **`pk`** → Chave pública composta por \( \langle p, q, g, g^s \rangle \).  
+- **`s`** → Chave privada, escolhida aleatoriamente no intervalo (0, q) .  
+- **`pk`** → Chave pública 
 
-### **Cifra (`Enc(pk, m)`)**  
-- **`m`** → Mensagem a ser cifrada, elemento de \( \mathbb{F}_p^\ast \).  
-- **`ω`** → Valor aleatório escolhido no intervalo \( (0, q) \).  
-- **`γ`** → Valor intermediário, calculado como \( g^\omega \).  
-- **`κ`** → Chave de cifra temporária, calculada como \( (g^s)^\omega \).  
-- **`c`** → Criptograma resultante \( \langle \gamma, m \times \kappa \rangle \).  
-- **$`κ = γ^8`$** → Definição específica da chave de cifra temporária no contexto dado.
+---
 
-​​
+### **Encrypt (`Enc(pk, m)`)**  
+- **`m`** → Mensagem a ser cifrada 
+- **`ω`** → Valor aleatório escolhido no intervalo  (0, q).  
+- **`γ`** → Valor intermediário  
+- **`κ`** → Chave de cifra temporária  
+- **`c`** → Criptograma resultante   
+- **`κ = γ^s`** → Definição alternativa da chave de cifra temporária.
 ​​
 

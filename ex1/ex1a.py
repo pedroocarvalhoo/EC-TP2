@@ -5,7 +5,7 @@ from sympy import isprime, nextprime
 
 _lambda = 256 # security parameter
 
-def parameter_generator(_lambda):
+def genkeys(_lambda):
     
     """
     Generate q, that needs to be approximatly 2^_lambda
@@ -56,7 +56,7 @@ def parameter_generator(_lambda):
 
 
 if __name__ == "__main__":
-    p, q, g, s = parameter_generator(_lambda)
+    p, q, g, s = genkeys(_lambda)
     print(f"p = {p} ({p.bit_length()} bits)")
     print(f"q = {q} ({q.bit_length()} bits)")
     print(f"g = {g}")
