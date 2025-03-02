@@ -7,8 +7,8 @@ def parameter_generator(_lambda):
     """
     Generate q, that needs to be approximately 2^_lambda
     """
-    lower_bound = Integer(2^(_lambda - 1))
-    upper_bound = Integer(2^_lambda - 1)
+    lower_bound = 2^(_lambda - 1)
+    upper_bound = 2^_lambda - 1
     q_candidate = randint(lower_bound, upper_bound)
     q = next_prime(q_candidate)
     
@@ -53,4 +53,3 @@ if __name__ == "__main__":
     print(f"q = {q} ({q.nbits()} bits)")
     print(f"g = {g}")
     print(f"s = {s}")
-    
