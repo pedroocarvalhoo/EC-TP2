@@ -62,15 +62,15 @@ def parameter_generator(_lambda):
     """
     Generate private key which is a random number between 0 and q
     """
-    s = randint(0, q-1)
+    s = randint(1, q-1)
     
     """
     Generate the public key
     """
-    h = power_mod(g, s, q)
+    h = power_mod(g, s, p)
     
 
-    return p, q, g, h
+    return p, q, g, h, s
 
 
 def verify_parameters(p, q, g):
@@ -105,7 +105,7 @@ def verify_parameters(p, q, g):
             return False
     
     # If all checks pass
-    print("All parameters are correctly defined.")
+    print("All parameters are correctly defined. \n")
     return True
 
 
@@ -121,14 +121,57 @@ def enc(plaintext,p,q,g,h):
     Generate new encryption parameters
     """
     
-    gama = power_mod(g,omega,q)
-    kappa = power_mod(h,omega,q)
+    gamma = power_mod(g,omega,p)
+    kappa = power_mod(h,omega,p)
     
+    
+    """
+    Get a number from the plaintext
+    To do this we need to convert the plaintext to a number that belongs to Fp*
+    This means, 0 < m < p e gcp(m,p) = 1, esta segunda é sempre cumprida
+    """
+    
+    mapped_plaintext = int.from_bytes(plaintext.encode('utf-8'), byteorder='big')
+    
+    if mapped_plaintext >= p:
+        raise ValueError("Plaintext is too large to be encrypted with the given p.")
     
     """
     Encrypt the plaintext
     """
-    mapped_plaintext = plaintext.encode('utf-8')
+    
+    ciphertext = (mapped_plaintext * kappa) % p
+    
+    return gamma,ciphertext
+
+
+    
+def dec(gamma,ciphertext,private_key,p):   
+
+    """
+    Compute kappa and kappa_inv
+    """
+    
+    kappa= power_mod(gamma,private_key,p)
+    kappa_inv = power_mod(kappa,-1,p)
+    
+    """
+    Decript the ciphertext
+    We need S^(-1) mod q, o could compute this by using the Lagrange's theorem -> secret^(-1) = power_mod(gamma,q-x,q)
+    """
+    
+    m = (ciphertext * kappa_inv) % p
+    try:
+        plaintext = m.to_bytes((m.bit_length() + 7) // 8, byteorder='big').decode('utf-8')
+    except UnicodeDecodeError:
+        raise ValueError("Failed to decode the plaintext. Ensure the original plaintext was properly encoded.")
+    
+    return plaintext
+    
+    
+    
+    
+
     
     
     
@@ -138,14 +181,21 @@ if __name__ == "__main__":
     
     plaintext = "Hello World!" #deve ser convertida para um numero pertencente a Fp (0, p-1)
     
-    p, q, g, s = parameter_generator(_lambda)
+    p, q, g, h, s = parameter_generator(_lambda)
     
     print(f"p = {p} ({p.nbits()} bits)")
     print(f"q = {q} ({q.nbits()} bits)")
     print(f"g = {g}")
     print(f"s = {s}")
-    
+     
     verify_parameters(p, q, g)
     
-    enc(plaintext, p, q, g, s)
+    gamma, ciphertext = enc(plaintext, p, q, g, h)
     
+    print(f"gamma = {gamma}")
+    print(f"ciphertext = {ciphertext}")
+    
+    
+    new_plaintext = dec(gamma,ciphertext,s,p)
+    
+    print(f"new_plaintext = {new_plaintext}")
