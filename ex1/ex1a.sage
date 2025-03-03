@@ -109,13 +109,13 @@ def verify_parameters(p, q, g):
     return True
 
 
-def enc(,plaintext,p,q,g,h):
+def enc(plaintext,p,q,g,h):
     
     """
     Generate the secret key
     """
 
-    omega = randing(0, q-1)
+    omega = randint(0, q-1)
     
     """
     Generate new encryption parameters
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     print(f"g = {g}")
     print(f"s = {s}")
     
-    verify_parameters(p, q, g, s)
+    verify_parameters(p, q, g)
     
     enc(plaintext, p, q, g, s)
     
