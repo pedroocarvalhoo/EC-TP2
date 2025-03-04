@@ -1,5 +1,7 @@
 #!/usr/bin/env sage
 
+#https://en.wikipedia.org/wiki/ElGamal_encryption
+
 # 1. Choose the parameters
 _lambda = 128  # security parameter
 lambda_bits = _lambda.nbits() # 128 in binary is 10000000 -> 8 bits
