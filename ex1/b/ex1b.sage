@@ -105,13 +105,19 @@ def enc(plaintext, p, q, g, h):
     """
     
     r = randint(1, q - 1)
+    
+    print(f"Parameter r : {r}")
+    print("This parameter will be used to randomize the message and add some integrity to the encryption")
+    
     gamma = power_mod(g, r, p)
     kappa = power_mod(h, r, p)
     
     """
     We need to combine r with the message to make it secure and make it possible to get r back when decrypting
     """
+    
     combined = (r << 128) + m_int
+
     
     ciphertext = (combined * kappa) % p
     
@@ -128,22 +134,41 @@ def dec(ciphertext, private_key, p, q):
     """
     Decrypt using Fujisaki-Okamoto transformation.
     """
-    # Extrair componentes do ciphertext
+
+    """
+    Extract variables from the ciphertext
+    c1 = gamma,encrypted_message -> elgammal(with randomization)
+    c2 = r_hash -> fujisaki-okamoto transformation
+    """
+    
     c_1, c_2 = ciphertext
     gamma, encrypted_message = c_1
     
-    # Calcular kappa usando a chave privada
+    """
+    Compute kappa and kappa_inv
+    """
+    
     kappa = power_mod(gamma, private_key, p)
     kappa_inv = power_mod(kappa, -1, p)
     
-    # Recuperar a mensagem
+    """
+    Decrypt the message
+    """
+    
     combined = (encrypted_message * kappa_inv) % p
     
-    # Recuperar r usando a mensagem decifrada
+    """
+    Extract r and m from the combined message
+    """
     r = combined >> 128 
+    
+    print(f"decrypted r : {r}")
     m_int = combined & ((1 << 128) - 1)
     
-    # Verificar integridade usando r
+    """
+    Verify autenticity of the message using r to compute the Hash
+    """
+    
     r_hash_calculated = H(r)
     if r_hash_calculated != c_2:
         raise ValueError("Ciphertext integrity check failed. The ciphertext may have been changed.")
@@ -156,7 +181,8 @@ def dec(ciphertext, private_key, p, q):
         raise ValueError("Failed to decode the plaintext.")
 
 if __name__ == "__main__":
-    plaintext = "Hello World!"
+    
+    plaintext = "Hello World!!!!"
     
     p, q, g, h, s = parameter_generator(_lambda)
     
@@ -166,16 +192,14 @@ if __name__ == "__main__":
     print(f"s = {s}")
      
     verify_parameters(p, q, g)
-    
-    # Cifrar usando a transformação Fujisaki-Okamoto
+
     c_1, c_2 = enc(plaintext, p, q, g, h)
     
     print(f"c_1 = {c_1}")
     print(f"c_2 = {c_2}")
     
-    # Decifrar
     try:
         new_plaintext = dec((c_1, c_2), s, p, q)
-        print(f"new_plaintext = {new_plaintext}")
+        print(f"Decrypted Plaintext = {new_plaintext}")
     except ValueError as e:
         print(e)
