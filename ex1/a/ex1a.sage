@@ -171,14 +171,6 @@ def dec(gamma,ciphertext,private_key,p):
     return plaintext
     
     
-    
-    
-
-    
-    
-    
-    
-    
 if __name__ == "__main__":
     
     plaintext = "Hello World!" #deve ser convertida para um numero pertencente a Fp (0, p-1)
