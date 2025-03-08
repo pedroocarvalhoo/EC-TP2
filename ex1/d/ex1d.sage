@@ -114,8 +114,7 @@ def generate_oblivious_criterion(n,kappa,q):
     
     u = vector(Zq, n-kappa)                   
     for i in range(n-kappa):
-        # Em vez de j usamos n 
-        u[j] = Zq(H(str(rho) + str(n) + str(j), length=q.nbits()))
+        u[i] = Zq(H(str(rho) + str(n) + str(i), length=q.nbits()))
         
     """
     O par (A,u) constitui o OC.
@@ -133,11 +132,77 @@ def generate_oblivious_criterion(n,kappa,q):
     
     return A, u, rho
     
+def generate_query_vector(A,u,selected_indices,q):
+    """
+    Gerar o vetor v, que será usado pelo provider para garantir que o recetor está a fazer uma escolha justa, e nao a tentar obter mais mensagens do que as permitidas
+    """
+    
+    """
+    Extraímos as dimensões da matriz A para determinar n e κ.
+    Isto é feito desta forma por consistência - ambos Provedor e Receptor já conhecem estes valores.
+    Desta forma confirmamos que tamos a enviar A e u corretos.
+    """
+    
+    n, n_minus_kappa = A.dimensions()
+    kappa = n - n_minus_kappa
+    
+    """
+    Verificamos se o número de índices selecionados é exatamente kappa.
+    O protocolo foi projetado para funcionar apenas com κ índices, nem mais nem menos.
+    """
+    
+    if len(selected_indices) != kappa:
+        raise ValueError(f"O receiver não escolheu {kappa} índices")
+    
+    
+    """
+    Criamos uma submatriz A_subset, que contém apenas as linhas selecionadas.
+    """
+    
+    Zq = GF(q)
+    A_selected = matrix(Zq, kappa, n_minus_kappa)
+    for new_line, line in enumerate(selected_indices):
+        A_selected[new_line] = A[line]
+    
+    """
+    Criamos um vetor u_selected que contém os valores correspondentes de u.
+    Este vetor representa os "valores-alvo" que queremos atingir com nosso vetor p.
+    """
+    
+    u_selected = vector(Zq, kappa)
+    for new_index, orig_index in enumerate(selected_indices):
+        # Para cada índice selecionado i, queremos que A[i] · v = u[i]
+        for j in range(n_minus_kappa):
+            u_selected[new_index] += A[orig_index, j] * u[j]
 
+    """
+    Agora resolvemos o sistema de equações lineares:
+    A_selected * p = u_selected
+    
+    Isto será equivalente a:
+    A[i] · p = u[i]
+    
+    Esta é a propriedade matemática central do protocolo OT:
+    - Para indices selecionados: A[i] · p = produtos específicos
+    - Para outros indices: A[j] · p parece aleatório
+    """
+    
+    try:
+        # Resolver o sistema linear usando álgebra linear do SageMath
+        p = A_selected.solve_right(u_selected)
+        
+        """
+        O vetor p agora codifica as escolhas do receptor, sem revelar
+        quais índices foram selecionados. Este vetor será enviado ao provedor.
+        """
+        
+        return p
+        
+    except Exception as e:
+        # Se não foi possível resolver o sistema, algo está errado com os parâmetros
+        raise ValueError(f"Não foi possível gerar o vetor de consulta: {e}")
+    
 def H(value, length=32):
-    """
-    Função hash H mencionada no documento
-    """
     return int.from_bytes(hashlib.sha256(str(value).encode()).digest(), byteorder='big') % (2^length)
 
 
@@ -201,27 +266,221 @@ def dec(ciphertext, private_key, p, q):
         raise ValueError("Failed to decode the plaintext.")
 
 
+def encrypt_messages(messages, A, u, query_vector, elgamal_params):
+    """
+    FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)
+    """
+    # Extrair parâmetros ElGamal
+    p_elgamal, q, g, h, s = elgamal_params
+    
+    # Verificar dimensões
+    n = len(messages)
+    if n != A.nrows():
+        raise ValueError(f"Número de mensagens ({n}) não corresponde às linhas de A ({A.nrows()})")
+    
+    encrypted_messages = []
+    
+    for i in range(n):
+        # Calcular o produto escalar p · A[i]
+        dot_product = sum(query_vector[j] * A[i,j] for j in range(len(query_vector)))
+        
+        try:
+            # 1. Cifrar a mensagem normalmente
+            ciphertext = enc(messages[i], p_elgamal, q, g, h)
+            c_1, c_2 = ciphertext
+            gamma, encrypted_message = c_1
+            
+            # 2. IMPORTANTE: Modificamos o criptograma usando dot_product e u[i]
+            # Calculamos um valor baseado no produto escalar
+            # Para índices selecionados: dot_product == u[i], então delta = 1
+            # Para índices não selecionados: dot_product != u[i], então delta != 1
+            delta = (q + dot_product - u[i]) % q
+            
+            # 3. Se delta != 0 (índice não selecionado), multiplicamos por um valor que 
+            # tornará a decifração impossível
+            if delta != 0:
+                # Isso efetivamente "quebra" a mensagem para índices não selecionados
+                encrypted_message = (encrypted_message * delta) % p_elgamal
+            
+            modified_ciphertext = ((gamma, encrypted_message), c_2)
+            
+            # Armazenar a mensagem cifrada
+            encrypted_messages.append({
+                'index': i,
+                'ciphertext': modified_ciphertext,
+                'dot_product': dot_product
+            })
+            
+        except Exception as e:
+            print(f"Erro ao cifrar mensagem {i}: {e}")
+    
+    return encrypted_messages
+
+
+def decrypt_messages(encrypted_messages, selected_indices, elgamal_params):
+    """
+    FASE 4: DECIFRA DAS MENSAGENS (RECEPTOR)
+    """
+    # Extrair parâmetros ElGamal
+    p_elgamal, q, g, h, s = elgamal_params
+    
+    decrypted_messages = {}
+    
+    # Para cada mensagem cifrada
+    for message_data in encrypted_messages:
+        i = message_data['index']
+        ciphertext = message_data['ciphertext']
+        
+        try:
+            # Tentar decifrar - isso só funcionará para índices selecionados
+            # devido à modificação feita durante a cifragem
+            plaintext = dec(ciphertext, s, p_elgamal, q)
+            
+            decrypted_messages[i] = plaintext
+            print(f"Mensagem {i} decifrada com sucesso: {plaintext}")
+            
+        except Exception as e:
+            print(f"Não foi possível decifrar mensagem {i}: {e}")
+    
+    return decrypted_messages
 
 if __name__ == "__main__":
+    """
+    TESTE DO PROTOCOLO OBLIVIOUS TRANSFER κ-OUT-OF-n
     
-    plaintext = "Hello World!!!!"
+    Este script testa todas as fases do protocolo OT:
+    1. Configuração (Provedor)
+    2. Seleção e Consulta (Receptor)
+    3. Cifra das Mensagens (Provedor)
+    4. Decifra das Mensagens (Receptor)
+    """
+    print("=" * 60)
+    print("TESTE DO PROTOCOLO OBLIVIOUS TRANSFER κ-OUT-OF-n")
+    print("=" * 60)
     
-    p, q, g, h, s = parameter_generator(_lambda)
+    # Definir parâmetros
+    n = 8  # Número total de mensagens
+    kappa = 3  # Número de mensagens a transferir
+    print(f"Parâmetros: n={n}, κ={kappa}")
     
-    print(f"p = {p} ({p.nbits()} bits)")
+    # FASE 1: CONFIGURAÇÃO (PROVEDOR)
+    print("\n" + "=" * 40)
+    print("FASE 1: CONFIGURAÇÃO (PROVEDOR)")
+    print("=" * 40)
+    
+    # Gerar parâmetros ElGamal
+    print("Gerando parâmetros ElGamal...")
+    # Usar um lambda menor para testes mais rápidos
+    test_lambda = 32  # Valor pequeno para testes rápidos
+    p_elgamal, q, g, h, s = parameter_generator(test_lambda)
+    
+    print(f"p = {p_elgamal} ({p_elgamal.nbits()} bits)")
     print(f"q = {q} ({q.nbits()} bits)")
     print(f"g = {g}")
-    print(f"s = {s}")
-     
-    verify_parameters(p, q, g)
-
-    c_1, c_2 = enc(plaintext, p, q, g, h)
+    print(f"h = {h}")
+    print(f"s = {s} (chave privada)")
     
-    print(f"c_1 = {c_1}")
-    print(f"c_2 = {c_2}")
+    # Verificar parâmetros
+    verify_parameters(p_elgamal, q, g)
     
-    try:
-        new_plaintext = dec((c_1, c_2), s, p, q)
-        print(f"Decrypted Plaintext = {new_plaintext}")
-    except ValueError as e:
-        print(e)
+    # Gerar critério oblívio
+    print("\nGerando critério oblívio (A, u)...")
+    A, u, rho = generate_oblivious_criterion(n, kappa, q)
+    
+    print(f"Matriz A ({A.nrows()}×{A.ncols()}):")
+    print(A)
+    print(f"Vetor u ({len(u)} elementos):")
+    print(u)
+    print(f"Seed rho (secreta): {rho}")
+    
+    # Criar mensagens de teste
+    messages = [f"Mensagem {i+1}" for i in range(n)]
+    print("\nMensagens disponíveis:")
+    for i, msg in enumerate(messages):
+        print(f"  [{i}] {msg}")
+    
+    # FASE 2: SELEÇÃO E CONSULTA (RECEPTOR)
+    print("\n" + "=" * 40)
+    print("FASE 2: SELEÇÃO E CONSULTA (RECEPTOR)")
+    print("=" * 40)
+    
+    # Selecionar κ índices
+    # Podemos escolher índices específicos para teste ou usar aleatórios
+    selected_indices = [2, 4, 7]  # Índices escolhidos pelo receptor
+    print(f"Receptor escolhe índices: {selected_indices}")
+    print(f"Mensagens selecionadas:")
+    for idx in selected_indices:
+        print(f"  [{idx}] {messages[idx]}")
+    
+    # Gerar vetor de consulta
+    print("\nGerando vetor de consulta p...")
+    query_vector = generate_query_vector(A, u, selected_indices, q)
+    print(f"Vetor p gerado: {query_vector}")
+    
+# Verificar propriedade do vetor de consulta (apenas para diagnóstico)
+print("\nVerificando propriedade do vetor de consulta:")
+for i in range(n):
+    # Calcular p·A[i]
+    dot_product = sum(query_vector[j] * A[i,j] for j in range(len(query_vector)))
+    
+    # Calcular o valor esperado para comparação
+    expected_sum = sum(A[i,j] * u[j] for j in range(len(u)))
+    
+    is_selected = i in selected_indices
+    
+    if is_selected:
+        # Para índices selecionados, deve ser: p·A[i] == expected_sum
+        print(f"  Índice {i} (SELECIONADO): p·A[{i}] = {dot_product}, esperado = {expected_sum}")
+        print(f"    Match: {'✓' if dot_product == expected_sum else '✗'}")
+    else:
+        # Para índices não selecionados, normalmente: p·A[i] ≠ expected_sum
+        print(f"  Índice {i} (NÃO SELECIONADO): p·A[{i}] = {dot_product}, esperado = {expected_sum}")
+        print(f"    Match: {'✗' if dot_product != expected_sum else '✓'}")
+    
+    # FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)
+    print("\n" + "=" * 40)
+    print("FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)")
+    print("=" * 40)
+    
+    # Criar tupla com parâmetros ElGamal
+    elgamal_params = (p_elgamal, q, g, h, s)
+    
+    # Cifrar mensagens
+    print("Cifrando mensagens...")
+    encrypted_messages = encrypt_messages(messages, A, u, query_vector, elgamal_params)
+    print(f"Total de {len(encrypted_messages)} mensagens cifradas")
+    
+    # FASE 4: DECIFRA DAS MENSAGENS (RECEPTOR)
+    print("\n" + "=" * 40)
+    print("FASE 4: DECIFRA DAS MENSAGENS (RECEPTOR)")
+    print("=" * 40)
+    
+    # Decifrar mensagens
+    print("Tentando decifrar mensagens...")
+    decrypted_messages = decrypt_messages(encrypted_messages, selected_indices, elgamal_params)
+    
+    # Verificar resultados
+    print("\n" + "=" * 40)
+    print("RESULTADOS FINAIS")
+    print("=" * 40)
+    print(f"Mensagens recuperadas: {len(decrypted_messages)}/{kappa}")
+    
+    # Verificar se todas as mensagens selecionadas foram decifradas
+    all_recovered = len(decrypted_messages) == kappa
+    correct_indices = all(idx in decrypted_messages for idx in selected_indices)
+    
+    if all_recovered and correct_indices:
+        print("✓ SUCESSO! O protocolo OT funcionou corretamente.")
+        print("  O receptor recuperou exatamente as κ mensagens selecionadas.")
+    else:
+        print("✗ FALHA! O protocolo OT não funcionou como esperado.")
+        print(f"  Mensagens recuperadas: {sorted(decrypted_messages.keys())}")
+        print(f"  Mensagens esperadas: {selected_indices}")
+    
+    # Comparar mensagens originais com decifradas
+    print("\nVerificação das mensagens recuperadas:")
+    for idx in decrypted_messages:
+        original = messages[idx]
+        decrypted = decrypted_messages[idx]
+        match = original == decrypted
+        print(f"  [{idx}] Original: '{original}' | Decifrada: '{decrypted}' | {'✓' if match else '✗'}")
