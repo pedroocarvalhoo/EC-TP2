@@ -8,7 +8,7 @@ Este trabalho usa SageMath nas suas implementações.
     1. Implemente um esquema  PKE $\,\mathsf{ElGamal}(\lambda)\,$ (ver Capítulo 4) num subgrupo de ordem prima $\,q\,$,  com $\,|q|\geq \lambda\,$, do grupo multiplicativo $\,\mathbb{F}^\ast_p\,$ com $\,p\,$ um primo que verifica $\,|p| \geq \lambda\times|\lambda|$ . Identifique o gerador de chaves e os algoritmos de cifra de decifra neste esquema. Identifique o núcleo deterministico do algoritmo de cifra.
     2. Supondo que a cifra que implementou é IND-CPA segura (de novo Capítulo 4), usando a transformação de Fujisaki-Okamoto implemente um PKE que seja IND-CCA seguro.
     3. A partir de (b) construa um esquema de KEM que seja IND-CCA seguro.
-    4. A partir de (b) construa uma implementação de um protocolo autenticado de “Oblivious Transfer” $\,\kappa$-out-of-$n\,$.
+    4. A partir de (b) construa uma implementação de um protocolo autenticado de “Oblivious Transfer” $\,\kappa-out-of-n\,$.
 
 
 2. Construir uma classe Python que implemente o  EcDSA a partir do “standard” FIPS186-5
