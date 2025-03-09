@@ -280,6 +280,20 @@ def encrypt_messages(messages, A, u, query_vector, elgamal_params):
     
     encrypted_messages = []
     
+def encrypt_messages(messages, A, u, query_vector, elgamal_params):
+    """
+    FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)
+    """
+    # Extrair parâmetros ElGamal
+    p_elgamal, q, g, h, s = elgamal_params
+    
+    # Verificar dimensões
+    n = len(messages)
+    if n != A.nrows():
+        raise ValueError(f"Número de mensagens ({n}) não corresponde às linhas de A ({A.nrows()})")
+    
+    encrypted_messages = []
+    
     for i in range(n):
         # Calcular o produto escalar p · A[i]
         dot_product = sum(query_vector[j] * A[i,j] for j in range(len(query_vector)))
@@ -290,19 +304,17 @@ def encrypt_messages(messages, A, u, query_vector, elgamal_params):
             c_1, c_2 = ciphertext
             gamma, encrypted_message = c_1
             
-            # 2. IMPORTANTE: Modificamos o criptograma usando dot_product e u[i]
-            # Calculamos um valor baseado no produto escalar
-            # Para índices selecionados: dot_product == u[i], então delta = 1
-            # Para índices não selecionados: dot_product != u[i], então delta != 1
-            delta = (q + dot_product - u[i]) % q
+            # 2. Calculamos delta usando o produto escalar
+            delta = (dot_product - sum(A[i,j] * u[j] for j in range(len(u)))) % q
             
-            # 3. Se delta != 0 (índice não selecionado), multiplicamos por um valor que 
-            # tornará a decifração impossível
+            # 3. Se delta != 0 (índice não selecionado), modificamos o criptograma
             if delta != 0:
-                # Isso efetivamente "quebra" a mensagem para índices não selecionados
-                encrypted_message = (encrypted_message * delta) % p_elgamal
-            
-            modified_ciphertext = ((gamma, encrypted_message), c_2)
+                # Para índices não selecionados, multiplicamos por um valor que impede a decifração
+                modified_gamma = (gamma * power_mod(g, delta, p_elgamal)) % p_elgamal
+                modified_ciphertext = ((modified_gamma, encrypted_message), c_2)
+            else:
+                # Para índices selecionados, mantemos o criptograma original
+                modified_ciphertext = ciphertext
             
             # Armazenar a mensagem cifrada
             encrypted_messages.append({
@@ -371,7 +383,7 @@ if __name__ == "__main__":
     # Gerar parâmetros ElGamal
     print("Gerando parâmetros ElGamal...")
     # Usar um lambda menor para testes mais rápidos
-    test_lambda = 32  # Valor pequeno para testes rápidos
+    test_lambda = 128  # Valor pequeno para testes rápidos
     p_elgamal, q, g, h, s = parameter_generator(test_lambda)
     
     print(f"p = {p_elgamal} ({p_elgamal.nbits()} bits)")
@@ -412,38 +424,29 @@ if __name__ == "__main__":
     for idx in selected_indices:
         print(f"  [{idx}] {messages[idx]}")
     
-    # Gerar vetor de consulta
+    # GERAR O VETOR DE CONSULTA
     print("\nGerando vetor de consulta p...")
     query_vector = generate_query_vector(A, u, selected_indices, q)
     print(f"Vetor p gerado: {query_vector}")
     
-# Verificar propriedade do vetor de consulta (apenas para diagnóstico)
-print("\nVerificando propriedade do vetor de consulta:")
-for i in range(n):
-    # Calcular p·A[i]
-    dot_product = sum(query_vector[j] * A[i,j] for j in range(len(query_vector)))
-    
-    # Calcular o valor esperado para comparação
-    expected_sum = sum(A[i,j] * u[j] for j in range(len(u)))
-    
-    is_selected = i in selected_indices
-    
-    if is_selected:
-        # Para índices selecionados, deve ser: p·A[i] == expected_sum
-        print(f"  Índice {i} (SELECIONADO): p·A[{i}] = {dot_product}, esperado = {expected_sum}")
-        print(f"    Match: {'✓' if dot_product == expected_sum else '✗'}")
-    else:
-        # Para índices não selecionados, normalmente: p·A[i] ≠ expected_sum
-        print(f"  Índice {i} (NÃO SELECIONADO): p·A[{i}] = {dot_product}, esperado = {expected_sum}")
-        print(f"    Match: {'✗' if dot_product != expected_sum else '✓'}")
+    # Verificar propriedade do vetor de consulta
+    print("\nVerificando propriedade do vetor de consulta:")
+    for i in range(n):
+        dot_product = sum(query_vector[j] * A[i,j] for j in range(len(query_vector)))
+        expected = sum(A[i,j] * u[j] for j in range(len(u)))
+        is_selected = i in selected_indices
+        status = '✓' if (is_selected and dot_product == expected) or (not is_selected and dot_product != expected) else '✗'
+        
+        print(f"  Índice {i} ({'SELECIONADO' if is_selected else 'NÃO SELECIONADO'}): p·A[{i}] = {dot_product}, esperado = {expected}")
+        print(f"    Match: {status}")
+
+    # Criar tupla com parâmetros ElGamal
+    elgamal_params = (p_elgamal, q, g, h, s)
     
     # FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)
     print("\n" + "=" * 40)
     print("FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)")
     print("=" * 40)
-    
-    # Criar tupla com parâmetros ElGamal
-    elgamal_params = (p_elgamal, q, g, h, s)
     
     # Cifrar mensagens
     print("Cifrando mensagens...")
