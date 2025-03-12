@@ -92,7 +92,7 @@ def generate_oblivious_criterion(n,kappa,q):
     """
     Geramos a seed que será responsável por gerar A e u
     Esta seed serve como fonte de aleatoriedade para gerar A e u de forma determinística.
-    O remetente conhece rho, mas o receptor não.
+    O remetente conhece rho, mas o receiver não.
     """
     
     rho = randint(1, q - 1) #verificar se é este o intervalo correto
@@ -139,7 +139,7 @@ def generate_query_vector(A,u,selected_indices,q):
     
     """
     Extraímos as dimensões da matriz A para determinar n e κ.
-    Isto é feito desta forma por consistência - ambos Provedor e Receptor já conhecem estes valores.
+    Isto é feito desta forma por consistência - ambos Provider e receiver já conhecem estes valores.
     Desta forma confirmamos que tamos a enviar A e u corretos.
     """
     
@@ -188,12 +188,16 @@ def generate_query_vector(A,u,selected_indices,q):
     """
     
     try:
-        # Resolver o sistema linear usando álgebra linear do SageMath
-        p = A_selected.solve_right(u_selected)
-        
+        if len(selected_indices) > n_minus_kappa:
+            # For overdetermined systems, use least squares
+            p = A_selected.transpose().solve_right(A_selected.transpose() * u_selected)
+        else:
+            # For exactly determined or underdetermined systems
+            p = A_selected.solve_right(u_selected)
+
         """
-        O vetor p agora codifica as escolhas do receptor, sem revelar
-        quais índices foram selecionados. Este vetor será enviado ao provedor.
+        O vetor p agora codifica as escolhas do receiver, sem revelar
+        quais índices foram selecionados. Este vetor será enviado ao Provider.
         """
         
         return p
@@ -268,21 +272,7 @@ def dec(ciphertext, private_key, p, q):
 
 def encrypt_messages(messages, A, u, query_vector, elgamal_params):
     """
-    FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)
-    """
-    # Extrair parâmetros ElGamal
-    p_elgamal, q, g, h, s = elgamal_params
-    
-    # Verificar dimensões
-    n = len(messages)
-    if n != A.nrows():
-        raise ValueError(f"Número de mensagens ({n}) não corresponde às linhas de A ({A.nrows()})")
-    
-    encrypted_messages = []
-    
-def encrypt_messages(messages, A, u, query_vector, elgamal_params):
-    """
-    FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)
+    FASE 3: CIFRA DAS MENSAGENS (Provider)
     """
     # Extrair parâmetros ElGamal
     p_elgamal, q, g, h, s = elgamal_params
@@ -331,7 +321,7 @@ def encrypt_messages(messages, A, u, query_vector, elgamal_params):
 
 def decrypt_messages(encrypted_messages, selected_indices, elgamal_params):
     """
-    FASE 4: DECIFRA DAS MENSAGENS (RECEPTOR)
+    FASE 4: DECIFRA DAS MENSAGENS (receiver)
     """
     # Extrair parâmetros ElGamal
     p_elgamal, q, g, h, s = elgamal_params
@@ -359,32 +349,51 @@ def decrypt_messages(encrypted_messages, selected_indices, elgamal_params):
 if __name__ == "__main__":
     """
     TESTE DO PROTOCOLO OBLIVIOUS TRANSFER κ-OUT-OF-n
-    
-    Este script testa todas as fases do protocolo OT:
-    1. Configuração (Provedor)
-    2. Seleção e Consulta (Receptor)
-    3. Cifra das Mensagens (Provedor)
-    4. Decifra das Mensagens (Receptor)
     """
+    
     print("=" * 60)
     print("TESTE DO PROTOCOLO OBLIVIOUS TRANSFER κ-OUT-OF-n")
     print("=" * 60)
     
-    # Definir parâmetros
-    n = 8  # Número total de mensagens
-    kappa = 3  # Número de mensagens a transferir
+    # Input para testes
+    while True:
+        try:
+            n = int(input("Nº total de mensagens (n): "))
+            if n <= 0:
+                print("O número de mensagens deve ser maior que 0.")
+                continue
+                
+            kappa = int(input(f"Quantas mensagens quer receber? (κ <= {n}): "))
+            if kappa <= 0:
+                print("O número de mensagens a transferir deve ser maior que 0.")
+                continue
+            if kappa > n:
+                print(f"O número de mensagens a transferir não pode ser maior que ({n}).")
+                continue
+                
+            # Validações específicas do protocolo
+            if kappa >= n/2:
+                print(f"\nATENÇÃO: Com κ >= n/2, o protocolo pode ter limitações de segurança.")
+                confirmar = input("Deseja continuar mesmo assim? (s/n): ").lower()
+                if confirmar != 's':
+                    continue
+                    
+            break
+        except ValueError:
+            print("Por favor, digite valores numéricos válidos.")
+    
     print(f"Parâmetros: n={n}, κ={kappa}")
     
-    # FASE 1: CONFIGURAÇÃO (PROVEDOR)
+    # FASE 1: CONFIGURAÇÃO (Provider)
     print("\n" + "=" * 40)
-    print("FASE 1: CONFIGURAÇÃO (PROVEDOR)")
+    print("FASE 1: CONFIGURAÇÃO (Provider)")
     print("=" * 40)
     
     # Gerar parâmetros ElGamal
-    print("Gerando parâmetros ElGamal...")
-    # Usar um lambda menor para testes mais rápidos
-    test_lambda = 128  # Valor pequeno para testes rápidos
-    p_elgamal, q, g, h, s = parameter_generator(test_lambda)
+    print("A gerar parametros para o ElGamal...")
+    
+    _lambda = 128 
+    p_elgamal, q, g, h, s = parameter_generator(_lambda)
     
     print(f"p = {p_elgamal} ({p_elgamal.nbits()} bits)")
     print(f"q = {q} ({q.nbits()} bits)")
@@ -392,11 +401,9 @@ if __name__ == "__main__":
     print(f"h = {h}")
     print(f"s = {s} (chave privada)")
     
-    # Verificar parâmetros
     verify_parameters(p_elgamal, q, g)
     
-    # Gerar critério oblívio
-    print("\nGerando critério oblívio (A, u)...")
+    print("\n A gerar o Protocolo OT (A, u)...")
     A, u, rho = generate_oblivious_criterion(n, kappa, q)
     
     print(f"Matriz A ({A.nrows()}×{A.ncols()}):")
@@ -405,29 +412,30 @@ if __name__ == "__main__":
     print(u)
     print(f"Seed rho (secreta): {rho}")
     
-    # Criar mensagens de teste
+    # Criar mensagens 
     messages = [f"Mensagem {i+1}" for i in range(n)]
     print("\nMensagens disponíveis:")
     for i, msg in enumerate(messages):
         print(f"  [{i}] {msg}")
     
-    # FASE 2: SELEÇÃO E CONSULTA (RECEPTOR)
+    # FASE 2: SELEÇÃO E CONSULTA (Receiver)
     print("\n" + "=" * 40)
-    print("FASE 2: SELEÇÃO E CONSULTA (RECEPTOR)")
+    print("FASE 2: SELEÇÃO E CONSULTA (Receiver)")
     print("=" * 40)
     
-    # Selecionar κ índices
-    # Podemos escolher índices específicos para teste ou usar aleatórios
-    selected_indices = [2, 4, 7]  # Índices escolhidos pelo receptor
-    print(f"Receptor escolhe índices: {selected_indices}")
-    print(f"Mensagens selecionadas:")
+    # Gerar aleatoriamente κ índices
+    import random
+    selected_indices = sorted(random.sample(range(n), kappa))
+    
+    print(f"Receiver escolheu os índices: {selected_indices}")
+    print(f"Mensagens que devem ser enviadas:")
     for idx in selected_indices:
         print(f"  [{idx}] {messages[idx]}")
     
     # GERAR O VETOR DE CONSULTA
-    print("\nGerando vetor de consulta p...")
+    print("\nA gerar vetor de consulta p...")
     query_vector = generate_query_vector(A, u, selected_indices, q)
-    print(f"Vetor p gerado: {query_vector}")
+    print(f"Vetor p : {query_vector}")
     
     # Verificar propriedade do vetor de consulta
     print("\nVerificando propriedade do vetor de consulta:")
@@ -435,7 +443,7 @@ if __name__ == "__main__":
         dot_product = sum(query_vector[j] * A[i,j] for j in range(len(query_vector)))
         expected = sum(A[i,j] * u[j] for j in range(len(u)))
         is_selected = i in selected_indices
-        status = '✓' if (is_selected and dot_product == expected) or (not is_selected and dot_product != expected) else '✗'
+        status = 'YES' if (is_selected and dot_product == expected) or (not is_selected and dot_product != expected) else 'NO'
         
         print(f"  Índice {i} ({'SELECIONADO' if is_selected else 'NÃO SELECIONADO'}): p·A[{i}] = {dot_product}, esperado = {expected}")
         print(f"    Match: {status}")
@@ -443,23 +451,21 @@ if __name__ == "__main__":
     # Criar tupla com parâmetros ElGamal
     elgamal_params = (p_elgamal, q, g, h, s)
     
-    # FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)
+    # FASE 3: CIFRA DAS MENSAGENS (Provider)
     print("\n" + "=" * 40)
-    print("FASE 3: CIFRA DAS MENSAGENS (PROVEDOR)")
+    print("FASE 3: CIFRA DAS MENSAGENS (Provider)")
     print("=" * 40)
     
     # Cifrar mensagens
-    print("Cifrando mensagens...")
+    print("A cifrar mensagens...")
     encrypted_messages = encrypt_messages(messages, A, u, query_vector, elgamal_params)
     print(f"Total de {len(encrypted_messages)} mensagens cifradas")
     
-    # FASE 4: DECIFRA DAS MENSAGENS (RECEPTOR)
+    # FASE 4: DECIFRAR AS MENSAGENS (Receiver)
     print("\n" + "=" * 40)
-    print("FASE 4: DECIFRA DAS MENSAGENS (RECEPTOR)")
+    print("FASE 4: DECIFRA DAS MENSAGENS (Receiver)")
     print("=" * 40)
     
-    # Decifrar mensagens
-    print("Tentando decifrar mensagens...")
     decrypted_messages = decrypt_messages(encrypted_messages, selected_indices, elgamal_params)
     
     # Verificar resultados
@@ -473,10 +479,10 @@ if __name__ == "__main__":
     correct_indices = all(idx in decrypted_messages for idx in selected_indices)
     
     if all_recovered and correct_indices:
-        print("✓ SUCESSO! O protocolo OT funcionou corretamente.")
-        print("  O receptor recuperou exatamente as κ mensagens selecionadas.")
+        print("SUCESSO! O protocolo OT funcionou corretamente.")
+        print("  O receiver recuperou exatamente as κ mensagens selecionadas.")
     else:
-        print("✗ FALHA! O protocolo OT não funcionou como esperado.")
+        print("FALHA! O protocolo OT não funcionou como esperado.")
         print(f"  Mensagens recuperadas: {sorted(decrypted_messages.keys())}")
         print(f"  Mensagens esperadas: {selected_indices}")
     
@@ -486,4 +492,4 @@ if __name__ == "__main__":
         original = messages[idx]
         decrypted = decrypted_messages[idx]
         match = original == decrypted
-        print(f"  [{idx}] Original: '{original}' | Decifrada: '{decrypted}' | {'✓' if match else '✗'}")
+        print(f"  [{idx}] Original: '{original}' | Decifrada: '{decrypted}' | {'YES' if match else 'NO'}")
