@@ -1,76 +1,25 @@
 #!/usr/bin/env sage
 
 import hashlib
+import os
 from sage.rings.finite_rings.finite_field_constructor import GF
-
-# 1. Choose the parameters
-_lambda = 128  # security parameter
-lambda_bits = _lambda.nbits()
-
-def parameter_generator(_lambda):
-    lower_bound = 2^(_lambda - 1)
-    upper_bound = 2^_lambda - 1
-    q_candidate = randint(lower_bound, upper_bound)
-    q = next_prime(q_candidate)
-    
-    min_p_bits = _lambda * lambda_bits
-    
-    min_k = (2^(min_p_bits - 1) - 1) // q
-    max_k = (2^min_p_bits - 1) // q
-    
-    p = 0
-    import time
-    
-    start = time.time()
-    while True:
-        k = randint(min_k, max_k)
-        p_candidate = k * q + 1
-        if is_prime(p_candidate) and p_candidate.nbits() >= min_p_bits:
-            p = p_candidate
-            break
-        k += 1
-    end = time.time()
-    print("Time taken to generate p: ", end - start)
-        
-    g = 0
-    while True:
-        a = randint(2, p - 2)
-        g = power_mod(a, (p - 1) // q, p)
-        if g != 1:
-            break
-        
-    s = randint(1, q - 1)
-    h = power_mod(g, s, p)
-    
-    return p, q, g, h, s
-
-    
+load('utils.sage')
 
 
-def verify_parameters(p, q, g):
-    if not is_prime(p):
-        print("Error: p is not prime.")
-        return False
-    if not is_prime(q):
-        print("Error: q is not prime.")
-        return False
-    
-    if (p - 1) % q != 0:
-        print("Error: q does not divide p-1.")
-        return False
-    
-    if power_mod(g, q, p) != 1:
-        print("Error: g^q ≠ 1 mod p.")
-        return False
-    
-    for _ in range(10):
-        k = randint(2, q - 1)
-        if power_mod(g, k, p) == 1:
-            print(f"Error: g^{k} ≡ 1 mod p.")
-            return False
-    
-    print("All parameters are correctly defined. \n")
-    return True
+elgamal_params = None
+
+def matrixA(Gf, lines, cols, seed):
+    A = matrix(Gf, lines, cols)
+    for i in range(lines):
+        for j in range(cols):
+            A[i,j] = Gf(H(str(seed) + str(i) + str(j), length=q.nbits())) 
+    return A
+
+def vectorU(Gf, cols, seed):
+    u = vector(Gf, cols)
+    for i in range(cols):
+        u[i] = Gf(H(str(seed) + str(i), length=q.nbits()))
+    return u
 
 def generate_oblivious_criterion(n,kappa,q):
     """
@@ -95,50 +44,96 @@ def generate_oblivious_criterion(n,kappa,q):
     O remetente conhece rho, mas o receiver não.
     """
     
-    rho = randint(1, q - 1) #verificar se é este o intervalo correto
-    
+    rho1 = os.urandom(16).hex()
+    rho2 = os.urandom(16).hex()
     
     """
     Criamos a matriz A de dimensão n x (n-kappa).
     """
     
-    A = matrix(Zq, n, n-kappa)
-    for i in range(n):
-        for j in range(n-kappa):
-            # Geramos cada elemento usando hash de rho, i, j para garantir pseudoaleatoriedade
-            A[i,j] = Zq(H(str(rho) + str(i) + str(j), length=q.nbits())) 
+    A = matrixA(Zq, n, n-kappa,rho1)
             
     """
-    Criamos o vetor u de dimensão (n-κ).
+    Criamos o vetor u de dimensão (n-k).
     """
-    
-    u = vector(Zq, n-kappa)                   
-    for i in range(n-kappa):
-        u[i] = Zq(H(str(rho) + str(n) + str(i), length=q.nbits()))
-        
+
+    u = vectorU(Zq, n-kappa, rho2)                   
+
     """
     O par (A,u) constitui o OC.
     - A matriz A define as restrições lineares
     - O vetor u define os valores que devem ser satisfeitos
     
     Este sistema é construído de tal forma que:
-    1. Para qualquer subconjunto de κ linhas da matriz A, existe uma 
+    1. Para qualquer subconjunto de k linhas da matriz A, existe uma 
        solução v (que vai ser gerado pelo recetor) tal que A_subset * v = u_subset
-    2. Para qualquer subconjunto de κ+1 ou mais linhas, não existe tal solução
+    2. Para qualquer subconjunto de k+1 ou mais linhas, não existe tal solução
     
-    Esta propriedade matemática é o que garante que exatamente κ mensagens
+    Esta propriedade matemática é o que garante que exatamente k mensagens
     podem ser recuperadas, nem mais nem menos.
     """
+    return A, u, (rho1, rho2)
+
+def compute_goodKeys (selected_indices, n, elgamal_params):
     
-    return A, u, rho
+    p_vector = [None] * n
+    good_keys = {}
     
-def generate_query_vector(A,u,selected_indices,q):
+    p, q, g, h, master_private_key = elgamal_params
+    
+    """
+    Para cada índice selecionado, geramos um par de chaves ElGamal.
+    """
+    
+    for i in selected_indices:
+        private_key = randint(1, q - 1)
+        public_key = power_mod(g, private_key, p)
+        good_keys[i] = (public_key, private_key)
+        p_vector[i] = public_key
+    
+    secret = os.urandom(_lambda // 8)
+    indices_bytes = b"".join([i.to_bytes(4, 'big') for i in selected_indices])
+    
+    tag = hashlib.sha256(indices_bytes + secret).digest()
+    
+    return good_keys, tag, p_vector, secret
+
+
+def complete_p_vector(Zq, A, u, selected_indices,p_vector):
+    
+    """
+    Completa o vetor p com valores aleatórios para os índices não selecionados.
+    """
+    
+    n = A.nrows()
+    
+    all_indices = set(range(n))
+    unselected_indices = sorted(list(all_indices - set(selected_indices)))
+    
+    R = vector(Zq, u)
+    for i in selected_indices:
+        if p_vector[i] is not None:  
+            row = vector(Zq, A[i])
+            R -= p_vector[i] * row
+            
+    B_rows = [vector(Zq, A[j]) for j in unselected_indices]
+    B = matrix(Zq, B_rows)
+    
+    B_inv = B.inverse()
+    X = R * B_inv
+    
+    for idx, j in enumerate(unselected_indices):
+        p_vector[j] = int(X[idx])
+        
+    return p_vector
+ 
+def generate_query_vector(A, u, selected_indices, q):
     """
     Gerar o vetor v, que será usado pelo provider para garantir que o recetor está a fazer uma escolha justa, e nao a tentar obter mais mensagens do que as permitidas
     """
     
     """
-    Extraímos as dimensões da matriz A para determinar n e κ.
+    Extraímos as dimensões da matriz A para determinar n e k.
     Isto é feito desta forma por consistência - ambos Provider e receiver já conhecem estes valores.
     Desta forma confirmamos que tamos a enviar A e u corretos.
     """
@@ -148,169 +143,96 @@ def generate_query_vector(A,u,selected_indices,q):
     
     """
     Verificamos se o número de índices selecionados é exatamente kappa.
-    O protocolo foi projetado para funcionar apenas com κ índices, nem mais nem menos.
+    O protocolo foi projetado para funcionar apenas com k índices, nem mais nem menos.
     """
     
     if len(selected_indices) != kappa:
         raise ValueError(f"O receiver não escolheu {kappa} índices")
     
-    
     """
-    Criamos uma submatriz A_subset, que contém apenas as linhas selecionadas.
+    Primeiro, geramos as chaves para os índices selecionados e inicializamos o vetor p
     """
-    
     Zq = GF(q)
-    A_selected = matrix(Zq, kappa, n_minus_kappa)
-    for new_line, line in enumerate(selected_indices):
-        A_selected[new_line] = A[line]
+    good_keys, tag, p_vector, secret = compute_goodKeys(selected_indices, n,elgamal_params)
     
     """
-    Criamos um vetor u_selected que contém os valores correspondentes de u.
-    Este vetor representa os "valores-alvo" que queremos atingir com nosso vetor p.
+    Depois, completamos o vetor p com os valores para os índices não selecionados
+    """
+    p_vector = complete_p_vector(Zq, A, u, selected_indices, p_vector)
+    
+    """
+    Este vetor p tem a propriedade matemática que:
+    - Para índices selecionados i: p·A[i] = u·A[i]
+    - Para índices não selecionados j: p·A[j] ≠ u·A[j]
+    
+    Isto garante que apenas as mensagens dos índices selecionados podem ser decifradas.
     """
     
-    u_selected = vector(Zq, kappa)
-    for new_index, orig_index in enumerate(selected_indices):
-        # Para cada índice selecionado i, queremos que A[i] · v = u[i]
-        for j in range(n_minus_kappa):
-            u_selected[new_index] += A[orig_index, j] * u[j]
-
-    """
-    Agora resolvemos o sistema de equações lineares:
-    A_selected * p = u_selected
-    
-    Isto será equivalente a:
-    A[i] · p = u[i]
-    
-    Esta é a propriedade matemática central do protocolo OT:
-    - Para indices selecionados: A[i] · p = produtos específicos
-    - Para outros indices: A[j] · p parece aleatório
-    """
-    
-    try:
-        if len(selected_indices) > n_minus_kappa:
-            # For overdetermined systems, use least squares
-            p = A_selected.transpose().solve_right(A_selected.transpose() * u_selected)
-        else:
-            # For exactly determined or underdetermined systems
-            p = A_selected.solve_right(u_selected)
-
-        """
-        O vetor p agora codifica as escolhas do receiver, sem revelar
-        quais índices foram selecionados. Este vetor será enviado ao Provider.
-        """
+    return p_vector, tag, good_keys
         
-        return p
-        
-    except Exception as e:
-        # Se não foi possível resolver o sistema, algo está errado com os parâmetros
-        raise ValueError(f"Não foi possível gerar o vetor de consulta: {e}")
+def verify_criterion(p_vector, A, u, q):
+    """
+    Verifica se o vetor p satisfaz o critério oblivioso: p·A = u
+    """
+    Zq = GF(q)
+    n = len(p_vector)
+    d = len(u)
     
+    total = vector(Zq, [0] * d)
+    for i in range(n):
+        row = vector(Zq, A[i])
+        total += (p_vector[i] % q) * row
+        
+    u_vec = vector(Zq, u)
+    return total == u_vec
+
 def H(value, length=32):
     return int.from_bytes(hashlib.sha256(str(value).encode()).digest(), byteorder='big') % (2^length)
 
-
-def enc(plaintext, p, q, g, h):
-    # Converter mensagem para bytes se for string
-    if isinstance(plaintext, str):
-        m_bytes = plaintext.encode('utf-8')
-    else:
-        m_bytes = plaintext
-    
-    # Converter bytes para int
-    m_int = int.from_bytes(m_bytes, byteorder='big')
-    
-    if m_int >= p:
-        raise ValueError(f"Plaintext too large, must be less than p ({p.nbits()} bits)")
-    
-    r = randint(1, q - 1)
-    
-    print(f"Parameter r : {r}")
-    print("This parameter will be used to randomize the message and add some integrity to the encryption")
-    
-    gamma = power_mod(g, r, p)
-    kappa = power_mod(h, r, p)
-    
-    combined = (r << 128) + m_int
-
-    ciphertext = (combined * kappa) % p
-    
-    c_2 = H(r)
-    c_1 = (gamma, ciphertext)
-    
-    return c_1, c_2
-
-
-def dec(ciphertext, private_key, p, q):
- 
-    c_1, c_2 = ciphertext
-    gamma, encrypted_message = c_1
-
-    
-    kappa = power_mod(gamma, private_key, p)
-    kappa_inv = power_mod(kappa, -1, p)
-    
-
-    combined = (encrypted_message * kappa_inv) % p
-    
-    r = combined >> 128 
-    
-    print(f"decrypted r : {r}")
-    m_int = combined & ((1 << 128) - 1)
-    
-    r_hash_calculated = H(r)
-    if r_hash_calculated != c_2:
-        raise ValueError("Ciphertext integrity check failed. The ciphertext may have been changed.")
-    
-    try:
-        m_bytes = m_int.to_bytes((m_int.bit_length() + 7) // 8, byteorder='big')
-        plaintext = m_bytes.decode('utf-8')
-        return plaintext
-    except UnicodeDecodeError:
-        raise ValueError("Failed to decode the plaintext.")
-
-
-def encrypt_messages(messages, A, u, query_vector, elgamal_params):
+def encrypt_messages(messages, A, u, query_vector, tag, elgamal_params):
     """
     FASE 3: CIFRA DAS MENSAGENS (Provider)
-    """
-    # Extrair parâmetros ElGamal
-    p_elgamal, q, g, h, s = elgamal_params
     
-    # Verificar dimensões
-    n = len(messages)
-    if n != A.nrows():
-        raise ValueError(f"Número de mensagens ({n}) não corresponde às linhas de A ({A.nrows()})")
+    Função simplificada que cifra cada mensagem usando a chave pública correspondente
+    do vetor de consulta (query_vector).
+    """
+    p_elgamal, q, g, h, s = elgamal_params
     
     encrypted_messages = []
     
-    for i in range(n):
-        # Calcular o produto escalar p · A[i]
-        dot_product = sum(query_vector[j] * A[i,j] for j in range(len(query_vector)))
-        
+    for i in range(len(messages)):
         try:
-            # 1. Cifrar a mensagem normalmente
-            ciphertext = enc(messages[i], p_elgamal, q, g, h)
-            c_1, c_2 = ciphertext
-            gamma, encrypted_message = c_1
+            # A chave pública para este índice é o elemento do query_vector
+            public_key_h = query_vector[i]
             
-            # 2. Calculamos delta usando o produto escalar
-            delta = (dot_product - sum(A[i,j] * u[j] for j in range(len(u)))) % q
-            
-            # 3. Se delta != 0 (índice não selecionado), modificamos o criptograma
-            if delta != 0:
-                # Para índices não selecionados, multiplicamos por um valor que impede a decifração
-                modified_gamma = (gamma * power_mod(g, delta, p_elgamal)) % p_elgamal
-                modified_ciphertext = ((modified_gamma, encrypted_message), c_2)
+            # Converter a mensagem para bytes se for string
+            if isinstance(messages[i], str):
+                m_bytes = messages[i].encode('utf-8')
             else:
-                # Para índices selecionados, mantemos o criptograma original
-                modified_ciphertext = ciphertext
+                m_bytes = messages[i]
             
-            # Armazenar a mensagem cifrada
+            # Converter para inteiro
+            m_int = int.from_bytes(m_bytes, byteorder='big')
+            
+            # Gerar valor aleatório r
+            r = randint(1, q - 1)
+            print(f"Parameter r : {r}")
+            
+            # Componentes de cifragem
+            gamma = power_mod(g, r, p_elgamal)
+            kappa = power_mod(public_key_h, r, p_elgamal)
+            
+            # Combinar r com a mensagem
+            combined = (r << 128) + m_int
+            encrypted_message = (combined * kappa) % p_elgamal
+            
+            # Hash para integridade, incorporando tag
+            c_2 = H(str(r) + str(tag.hex()))
+            c_1 = (gamma, encrypted_message)
+            
             encrypted_messages.append({
                 'index': i,
-                'ciphertext': modified_ciphertext,
-                'dot_product': dot_product
+                'ciphertext': (c_1, c_2)
             })
             
         except Exception as e:
@@ -318,28 +240,51 @@ def encrypt_messages(messages, A, u, query_vector, elgamal_params):
     
     return encrypted_messages
 
-
-def decrypt_messages(encrypted_messages, selected_indices, elgamal_params):
+def decrypt_messages(encrypted_messages, selected_indices, good_keys, tag, elgamal_params):
     """
-    FASE 4: DECIFRA DAS MENSAGENS (receiver)
+    FASE 4: DECIFRA AS MENSAGENS (receiver)
     """
-    # Extrair parâmetros ElGamal
     p_elgamal, q, g, h, s = elgamal_params
     
     decrypted_messages = {}
     
-    # Para cada mensagem cifrada
     for message_data in encrypted_messages:
         i = message_data['index']
-        ciphertext = message_data['ciphertext']
         
+        if i not in selected_indices:
+            print(f"Mensagem {i}: não selecionada, ignorando")
+            continue
+            
         try:
-            # Tentar decifrar - isso só funcionará para índices selecionados
-            # devido à modificação feita durante a cifragem
-            plaintext = dec(ciphertext, s, p_elgamal, q)
+            ciphertext = message_data['ciphertext']
+            c_1, c_2 = ciphertext
+            gamma, encrypted_message = c_1
+            
+            # Chave privada para este índice
+            private_key = good_keys[i][1]
+            
+            # Decifrar
+            kappa = power_mod(gamma, private_key, p_elgamal)
+            kappa_inv = power_mod(kappa, -1, p_elgamal)
+            
+            combined = (encrypted_message * kappa_inv) % p_elgamal
+            r = combined >> 128
+            m_int = combined & ((1 << 128) - 1)
+            
+            # Verificar integridade com tag
+            r_hash_calculated = H(str(r) + str(tag.hex()))
+            
+            if r_hash_calculated != c_2:
+                print(f"  Mensagem {i}: falha na verificação de integridade")
+                continue
+                
+            print(f"  Mensagem {i}: verificação bem-sucedida!")
+            
+            m_bytes = m_int.to_bytes((m_int.bit_length() + 7) // 8, byteorder='big')
+            plaintext = m_bytes.decode('utf-8')
             
             decrypted_messages[i] = plaintext
-            print(f"Mensagem {i} decifrada com sucesso: {plaintext}")
+            print(f"  Mensagem {i} decifrada: {plaintext}")
             
         except Exception as e:
             print(f"Não foi possível decifrar mensagem {i}: {e}")
@@ -348,14 +293,14 @@ def decrypt_messages(encrypted_messages, selected_indices, elgamal_params):
 
 if __name__ == "__main__":
     """
-    TESTE DO PROTOCOLO OBLIVIOUS TRANSFER κ-OUT-OF-n
+    TESTE DO PROTOCOLO OBLIVIOUS TRANSFER k-OUT-OF-n
     """
     
     print("=" * 60)
-    print("TESTE DO PROTOCOLO OBLIVIOUS TRANSFER κ-OUT-OF-n")
+    print("TESTE DO PROTOCOLO OBLIVIOUS TRANSFER k-OUT-OF-n")
     print("=" * 60)
     
-    # Input para testes
+
     while True:
         try:
             n = int(input("Nº total de mensagens (n): "))
@@ -363,45 +308,35 @@ if __name__ == "__main__":
                 print("O número de mensagens deve ser maior que 0.")
                 continue
                 
-            kappa = int(input(f"Quantas mensagens quer receber? (κ <= {n}): "))
+            kappa = int(input(f"Quantas mensagens quer receber? (k <= {n}): "))
             if kappa <= 0:
                 print("O número de mensagens a transferir deve ser maior que 0.")
                 continue
             if kappa > n:
                 print(f"O número de mensagens a transferir não pode ser maior que ({n}).")
-                continue
-                
-            # Validações específicas do protocolo
-            if kappa >= n/2:
-                print(f"\nATENÇÃO: Com κ >= n/2, o protocolo pode ter limitações de segurança.")
-                confirmar = input("Deseja continuar mesmo assim? (s/n): ").lower()
-                if confirmar != 's':
-                    continue
-                    
+                continue       
             break
         except ValueError:
             print("Por favor, digite valores numéricos válidos.")
     
-    print(f"Parâmetros: n={n}, κ={kappa}")
+    print(f"Parâmetros: n={n}, k={kappa}")
     
     # FASE 1: CONFIGURAÇÃO (Provider)
     print("\n" + "=" * 40)
     print("FASE 1: CONFIGURAÇÃO (Provider)")
     print("=" * 40)
     
-    # Gerar parâmetros ElGamal
     print("A gerar parametros para o ElGamal...")
     
     _lambda = 128 
     p_elgamal, q, g, h, s = parameter_generator(_lambda)
+    elgamal_params = (p_elgamal, q, g, h, s)
     
     print(f"p = {p_elgamal} ({p_elgamal.nbits()} bits)")
     print(f"q = {q} ({q.nbits()} bits)")
     print(f"g = {g}")
     print(f"h = {h}")
     print(f"s = {s} (chave privada)")
-    
-    verify_parameters(p_elgamal, q, g)
     
     print("\n A gerar o Protocolo OT (A, u)...")
     A, u, rho = generate_oblivious_criterion(n, kappa, q)
@@ -411,8 +346,7 @@ if __name__ == "__main__":
     print(f"Vetor u ({len(u)} elementos):")
     print(u)
     print(f"Seed rho (secreta): {rho}")
-    
-    # Criar mensagens 
+     
     messages = [f"Mensagem {i+1}" for i in range(n)]
     print("\nMensagens disponíveis:")
     for i, msg in enumerate(messages):
@@ -423,7 +357,6 @@ if __name__ == "__main__":
     print("FASE 2: SELEÇÃO E CONSULTA (Receiver)")
     print("=" * 40)
     
-    # Gerar aleatoriamente κ índices
     import random
     selected_indices = sorted(random.sample(range(n), kappa))
     
@@ -434,31 +367,24 @@ if __name__ == "__main__":
     
     # GERAR O VETOR DE CONSULTA
     print("\nA gerar vetor de consulta p...")
-    query_vector = generate_query_vector(A, u, selected_indices, q)
-    print(f"Vetor p : {query_vector}")
+    query_vector, tag, good_keys = generate_query_vector(A, u, selected_indices, q)
+    print(f"Vetor p: {query_vector}")
+    print(f"Tag: {tag.hex()}")
     
     # Verificar propriedade do vetor de consulta
     print("\nVerificando propriedade do vetor de consulta:")
-    for i in range(n):
-        dot_product = sum(query_vector[j] * A[i,j] for j in range(len(query_vector)))
-        expected = sum(A[i,j] * u[j] for j in range(len(u)))
-        is_selected = i in selected_indices
-        status = 'YES' if (is_selected and dot_product == expected) or (not is_selected and dot_product != expected) else 'NO'
-        
-        print(f"  Índice {i} ({'SELECIONADO' if is_selected else 'NÃO SELECIONADO'}): p·A[{i}] = {dot_product}, esperado = {expected}")
-        print(f"    Match: {status}")
+    verification_result = verify_criterion(query_vector, A, u, q)
+    print(f"Verificação global: p·A = u? {verification_result}")
 
-    # Criar tupla com parâmetros ElGamal
-    elgamal_params = (p_elgamal, q, g, h, s)
-    
-    # FASE 3: CIFRA DAS MENSAGENS (Provider)
+
+    # FASE 3: CIFRAR AS MENSAGENS (Provider)
     print("\n" + "=" * 40)
-    print("FASE 3: CIFRA DAS MENSAGENS (Provider)")
+    print("FASE 3: CIFRAR AS MENSAGENS (Provider)")
     print("=" * 40)
     
     # Cifrar mensagens
     print("A cifrar mensagens...")
-    encrypted_messages = encrypt_messages(messages, A, u, query_vector, elgamal_params)
+    encrypted_messages = encrypt_messages(messages, A, u, query_vector, tag, elgamal_params)
     print(f"Total de {len(encrypted_messages)} mensagens cifradas")
     
     # FASE 4: DECIFRAR AS MENSAGENS (Receiver)
@@ -466,7 +392,8 @@ if __name__ == "__main__":
     print("FASE 4: DECIFRA DAS MENSAGENS (Receiver)")
     print("=" * 40)
     
-    decrypted_messages = decrypt_messages(encrypted_messages, selected_indices, elgamal_params)
+    
+    decrypted_messages = decrypt_messages(encrypted_messages, selected_indices, good_keys, tag, elgamal_params)
     
     # Verificar resultados
     print("\n" + "=" * 40)
@@ -474,13 +401,12 @@ if __name__ == "__main__":
     print("=" * 40)
     print(f"Mensagens recuperadas: {len(decrypted_messages)}/{kappa}")
     
-    # Verificar se todas as mensagens selecionadas foram decifradas
     all_recovered = len(decrypted_messages) == kappa
     correct_indices = all(idx in decrypted_messages for idx in selected_indices)
     
     if all_recovered and correct_indices:
         print("SUCESSO! O protocolo OT funcionou corretamente.")
-        print("  O receiver recuperou exatamente as κ mensagens selecionadas.")
+        print("  O receiver recuperou exatamente as k mensagens selecionadas.")
     else:
         print("FALHA! O protocolo OT não funcionou como esperado.")
         print(f"  Mensagens recuperadas: {sorted(decrypted_messages.keys())}")
