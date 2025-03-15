@@ -189,3 +189,33 @@ class EdPoint:
             Q.duplica()
         
         return A
+
+    def create_point(self, x=None, y=None, skip_check=False):
+        """
+        Cria um ponto na curva Edwards.
+        
+        Args:
+            x: coordenada x (opcional)
+            y: coordenada y (opcional)
+            skip_check: se True, não verifica se o ponto está na curva
+            
+        Returns:
+            EdPoint: um ponto na curva
+        """
+        if x is None or y is None:
+            return EdPoint(self.Px, self.Py, self)
+        
+        if skip_check or self.is_edwards(x, y):
+            return EdPoint(x, y, self)
+        else:
+            a = self.constants['a']
+            d = self.constants['d']
+            x2 = x**2
+            y2 = y**2
+            left = a*x2 + y2
+            right = 1 + d*x2*y2
+            
+            if abs(left - right) < 1e-10:
+                return EdPoint(x, y, self)
+            else:
+                raise ValueError("O ponto não pertence à curva Edwards 25519")
