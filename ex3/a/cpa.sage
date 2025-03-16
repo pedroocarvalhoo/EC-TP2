@@ -2,7 +2,7 @@ from edwards25519 import Edwards25519
 import os
 from hashlib import sha256
 import random
-from operator import xor  # Importando a função xor do módulo operator
+from operator import xor  
 
 class EdwardsElGamal:
     """
@@ -87,15 +87,24 @@ if __name__ == "__main__":
     public_key, private_key = elgamal.keygen()
     
     plaintext = "Hello World!"
-    
+    print("=" * 40)
     print(f"Mensagem original: {plaintext}")
     
     encrypted_data = elgamal.encrypt_message(public_key, plaintext)
     
-    print(f"Mensagem cifrada: {encrypted_data}")
+    gamma, ciphertext, nonce = encrypted_data
+    gamma_x, gamma_y = gamma
+    
+    print("=" * 40)
+    print("==== DADOS CIFRADOS ====")
+    print(f"Gamma (ponto na curva):")
+    print(f"  x: {gamma_x}")
+    print(f"  y: {gamma_y}")
+    print(f"\nCiphertext: {ciphertext.hex()}")
+
 
     decrypted = elgamal.decrypt_message(private_key, encrypted_data)
-    
+    print("=" * 40)
     print(f"Mensagem decifrada: {decrypted}")
-    
     print(f"Sucesso? {plaintext == decrypted}")
+    print("=" * 40)
