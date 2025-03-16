@@ -104,7 +104,7 @@ def complete_p_vector(Zq, A, u, selected_indices,p_vector):
     """
     Completa o vetor p com valores aleatórios para os índices não selecionados.
     """
-    
+
     n = A.nrows()
     
     all_indices = set(range(n))
@@ -127,7 +127,7 @@ def complete_p_vector(Zq, A, u, selected_indices,p_vector):
         
     return p_vector
  
-def generate_query_vector(A, u, selected_indices, q):
+def generate_query_vector(A, u, selected_indices, q,p):
     """
     Gerar o vetor v, que será usado pelo provider para garantir que o recetor está a fazer uma escolha justa, e nao a tentar obter mais mensagens do que as permitidas
     """
@@ -158,7 +158,7 @@ def generate_query_vector(A, u, selected_indices, q):
     """
     Depois, completamos o vetor p com os valores para os índices não selecionados
     """
-    p_vector = complete_p_vector(Zq, A, u, selected_indices, p_vector)
+    p_vector = complete_p_vector(GF(p), A, u, selected_indices, p_vector)
     
     """
     Este vetor p tem a propriedade matemática que:
@@ -170,18 +170,18 @@ def generate_query_vector(A, u, selected_indices, q):
     
     return p_vector, tag, good_keys
         
-def verify_criterion(p_vector, A, u, q):
+def verify_criterion(p_vector, A, u, p):
     """
     Verifica se o vetor p satisfaz o critério oblivioso: p·A = u
     """
-    Zq = GF(q)
+    Zq = GF(p)
     n = len(p_vector)
     d = len(u)
     
     total = vector(Zq, [0] * d)
     for i in range(n):
         row = vector(Zq, A[i])
-        total += (p_vector[i] % q) * row
+        total += (p_vector[i] % p) * row
         
     u_vec = vector(Zq, u)
     return total == u_vec
@@ -367,13 +367,13 @@ if __name__ == "__main__":
     
     # GERAR O VETOR DE CONSULTA
     print("\nA gerar vetor de consulta p...")
-    query_vector, tag, good_keys = generate_query_vector(A, u, selected_indices, q)
+    query_vector, tag, good_keys = generate_query_vector(A, u, selected_indices, q,p_elgamal)
     print(f"Vetor p: {query_vector}")
     print(f"Tag: {tag.hex()}")
     
     # Verificar propriedade do vetor de consulta
     print("\nVerificando propriedade do vetor de consulta:")
-    verification_result = verify_criterion(query_vector, A, u, q)
+    verification_result = verify_criterion(query_vector, A, u, p_elgamal)
     print(f"Verificação global: p·A = u? {verification_result}")
 
 
