@@ -22,7 +22,7 @@ class EdwardsElGamal:
         """
         self.G = self.curve.create_point()  
         self.L, self.h = self.curve.order()  
-        self.ell = 8  # Número de bits para padding
+        self.ell = 8 
     
     def keygen(self):
         """

@@ -1,102 +1,189 @@
-from edwards25519 import Edwards25519
-import os
+from sage.all import *  # Importar todas as funções do SageMath
+from edwards25519 import Edwards25519, EdPoint
 from hashlib import sha256
 import random
-from operator import xor  
+from operator import xor 
 
 class EdwardsElGamal:
+    """
+    Implementação do ElGamal usando a curva Edwards25519 com transformação de Fujisaki-Okamoto
+    """
+    
     def __init__(self, security_param=128):
+        """
+        Inicializa o esquema ElGamal com a curva Edwards25519.
+        """
         self.lambda_security = security_param
         self.curve = Edwards25519()  
-        self.G = self.curve.create_point()  
-        self.L, self.h = self.curve.order()  
+        self.G = self.curve.create_point()  # Gerador da curva
+        self.L, self.h = self.curve.order()  # Ordem do grupo e cofator
+        self.ell = 8  # Número de bits para padding
     
     def keygen(self):
-        s = random.randint(1, int(self.L) - 1)
-        H_point = self.G.mult(s) 
+        """
+        Gera um par de chaves (privada, pública) para ElGamal.
+        """
+        s = random.randint(1, int(self.L) - 1)  # Chave privada
+        H_point = self.G.mult(s)  # Chave pública (multiplicação escalar)
         return (H_point, s)
     
-    def H(self, value, length=32):
+    def H1(self, value, length=32):
+        """
+        Função hash H1 para gerar um valor de hash de tamanho fixo.
+        """
         if isinstance(value, (int, Integer)):
             value_str = str(value)
         elif isinstance(value, tuple):
             value_str = f"{value[0]}:{value[1]}"
+        elif isinstance(value, EdPoint):
+            value_str = f"{value.x}:{value.y}"
         else:
             value_str = str(value)
-            
         return int.from_bytes(sha256(value_str.encode()).digest(), byteorder='big') % (2**length)
     
+    def H2(self, message, sigma, length=32):
+        """
+        Função hash H2 para derivar a aleatoriedade a partir da mensagem e sigma.
+        """
+        combined = f"{message}:{sigma}".encode()
+        return int.from_bytes(sha256(combined).digest(), byteorder='big') % int(self.L)
     
-    def encrypt_message(self, public_key, plaintext):
-        
-        if isinstance(plaintext, str):
-            plaintext_bytes = plaintext.encode('utf-8')
+    def H3(self, point, length=32):
+        """
+        Função hash H3 para gerar uma chave de cifra simétrica a partir de um ponto.
+        """
+        if isinstance(point, EdPoint):
+            value_str = f"{point.x}:{point.y}"
         else:
-            plaintext_bytes = plaintext
-        
-        m_int = int.from_bytes(plaintext_bytes, byteorder='big')
-        
-        # FO -> 1
-        r = random.randint(1, 2**128 - 1) #teve que ser assim por causa do tamanho...
-        print(f"Generated r : {r}")
-        
-        Gamma = self.G.mult(r) 
-        
-        pk = public_key 
-        S = pk.mult(r) 
-        
-        shared_key = sha256(f"{int(S.x)}:{int(S.y)}".encode()).digest() 
-        shared_key_int = int.from_bytes(shared_key[:16], byteorder='big')
-        if shared_key_int % 2 == 0:
-            shared_key_int += 1
-            
-        # FO -> 2
-        combined_data = (r << 128) + m_int
-        
-        # FO -> 3
-        ciphertext_int = (combined_data * shared_key_int) % (2**256)
-        ciphertext = ciphertext_int.to_bytes(32, byteorder='big')
+            value_str = str(point)
+        return int.from_bytes(sha256(value_str.encode()).digest(), byteorder='big') % (2**length)
+    
+    def encode_message(self, message):
+        """
+        Codifica uma mensagem em um ponto na curva usando o método de Koblitz.
+        """
+        m_int = int.from_bytes(message.encode('utf-8'), 'big')
+        k_bits = self.curve.p.bit_length()
+        if m_int.bit_length() > (k_bits - 1 - self.ell):
+            raise ValueError("Message too long to encode in one block.")
+        x0 = m_int << self.ell  # Adiciona padding de ell bits
+        for i in range(2**self.ell):
+            x = x0 + i
+            if x >= self.curve.p:
+                break
+            # Calcula f(x) = x^3 + a*x + b mod p
+            f_val = self.curve.K(x**3 + self.curve.constants['a4']*x + self.curve.constants['a6'])
+            if f_val.is_square():
+                y = f_val.sqrt()
+                ec_point = self.curve.EC(x, y)
+                ed_x, ed_y = self.curve.ec2ed(ec_point)
+                return EdPoint(ed_x, ed_y, self.curve)
+        raise ValueError("Non-encodable message: tried 2^ell possibilities.")
 
-        # FO -> 4
-        r_hash = self.H(r)
+    def decode_message(self, point):
+        """
+        Decodifica um ponto na curva de volta para a mensagem original.
+        """
+        # Converte o ponto Edwards para Weierstrass
+        ec_point = self.curve.ed2ec(point.x, point.y)
+        # Extrai a coordenada x e remove o padding
+        x_int = int(ec_point[0])
+        m_int = x_int >> self.ell
+        # Converte de volta para bytes e depois para string
+        byte_length = (m_int.bit_length() + 7) // 8
+        m_bytes = m_int.to_bytes(byte_length, 'big')
+        return m_bytes.decode('utf-8')
+
+    def xor_bytes(self, a, b):
+        """
+        Realiza XOR bit a bit entre dois valores inteiros.
+        """
+        # Garantir que ambos têm o mesmo comprimento em bytes
+        max_len = max(a.bit_length(), b.bit_length()) // 8 + 1
+        a_bytes = a.to_bytes(max_len, 'big')
+        b_bytes = b.to_bytes(max_len, 'big')
         
-        return ((int(Gamma.x), int(Gamma.y)), ciphertext, r_hash)
+        # Realiza o XOR byte a byte usando operator.xor
+        result = bytes(map(xor, a_bytes, b_bytes))
+        return int.from_bytes(result, 'big')
+
+    def encrypt_message(self, public_key, plaintext):
+        """
+        Criptografa uma mensagem usando ElGamal com transformação de Fujisaki-Okamoto.
+        
+        1. Gera um valor aleatório sigma
+        2. Deriva r = H2(plaintext, sigma)
+        3. Calcula Gamma = r*G
+        4. Calcula S = r*H (H é a chave pública)
+        5. Calcula k = H3(S)
+        6. Cifra o plaintext usando k: C = encode(plaintext) XOR k
+        7. Retorna (Gamma, C, sigma)
+        """
+        # Gerar um valor sigma aleatório
+        sigma = random.randint(1, 2**128)
+        
+        # Derivar r da mensagem e sigma usando H2
+        r = self.H2(plaintext, sigma)
+        print(f"Derived r : {r}")
+        
+        # Calcular Gamma = r*G
+        Gamma = self.G.mult(r)
+        
+        # Calcular S = r*H (H é a chave pública)
+        S = public_key.mult(r)
+        
+        # Derivar chave simétrica k = H3(S)
+        k = self.H3(S)
+        
+        # Converter plaintext para inteiro para o XOR
+        m_encoded = int.from_bytes(plaintext.encode('utf-8'), 'big')
+        
+        # Cifrar a mensagem: C = m XOR k
+        C = self.xor_bytes(m_encoded, k)
+        
+        return ((int(Gamma.x), int(Gamma.y)), C, sigma)
     
     def decrypt_message(self, private_key, encrypted_data):
-
-        (gamma_x, gamma_y), ciphertext, r_hash = encrypted_data
+        """
+        Decifra uma mensagem usando ElGamal com transformação de Fujisaki-Okamoto.
         
+        1. Recupera (Gamma, C, sigma) do ciphertext
+        2. Calcula S = s*Gamma (s é a chave privada)
+        3. Deriva k = H3(S)
+        4. Recupera o plaintext = C XOR k
+        5. Verifica a integridade: r' = H2(plaintext, sigma)
+        6. Verifica se Gamma = r'*G; se não, rejeita
+        """
+        (gamma_x, gamma_y), C, sigma = encrypted_data
+        
+        # Recria o ponto Gamma da curva
         Gamma = self.curve.create_point(self.curve.K(gamma_x), self.curve.K(gamma_y))
         
+        # Calcula S = s*Gamma usando a chave privada
         S = Gamma.mult(private_key)
         
-        shared_key = sha256(f"{int(S.x)}:{int(S.y)}".encode()).digest()
-    
-        ciphertext_int = int.from_bytes(ciphertext, byteorder='big')
+        # Deriva a chave simétrica k = H3(S)
+        k = self.H3(S)
         
-        shared_key_int = int.from_bytes(shared_key[:16], byteorder='big')
-        if shared_key_int % 2 == 0:
-            shared_key_int += 1
-        shared_key_inv = pow(shared_key_int, -1, 2**256)
+        # Decifra a mensagem: plaintext = C XOR k
+        plaintext_int = self.xor_bytes(C, k)
         
-        combined_data = (ciphertext_int * shared_key_inv) % (2**256)
+        # Converte o inteiro de volta para texto
+        byte_length = (plaintext_int.bit_length() + 7) // 8
+        try:
+            plaintext = plaintext_int.to_bytes(byte_length, 'big').decode('utf-8')
+        except UnicodeDecodeError:
+            raise ValueError("Decryption failed. Invalid plaintext.")
         
-        r = combined_data >> 128
-        print(f"Decrypted r : {r}")
-        m_int = combined_data & ((1 << 128) - 1)
+        # Verifica a integridade: r' = H2(plaintext, sigma)
+        r_prime = self.H2(plaintext, sigma)
         
-        r_hash_rec = self.H(r)
-        print(f"Hash of received r : {r_hash_rec}")
-        gamma_rec = self.G.mult(r)
-        gamma_check = gamma_rec.x == Gamma.x and gamma_rec.y == Gamma.y
+        # Calcula Gamma' = r'*G
+        Gamma_prime = self.G.mult(r_prime)
         
-        if r_hash != r_hash_rec or not gamma_check:
-            raise ValueError("Invalid ciphertext")
-        
-        
-        byte_length = max(1, (m_int.bit_length() + 7) // 8)
-        m_bytes = m_int.to_bytes(byte_length, byteorder='big')
-        plaintext = m_bytes.decode('utf-8') 
+        # Verifica se Gamma' == Gamma
+        if not (Gamma_prime.x == Gamma.x and Gamma_prime.y == Gamma.y):
+            raise ValueError("Ciphertext integrity check failed. The ciphertext may have been changed.")
         
         return plaintext
 
@@ -106,12 +193,11 @@ if __name__ == "__main__":
     public_key, private_key = elgamal.keygen()
     
     plaintext = "Hello World!"
-    
     print("=" * 40)
     print(f"Mensagem original: {plaintext}")
     
     encrypted_data = elgamal.encrypt_message(public_key, plaintext)
-    gamma, ciphertext, r_hash = encrypted_data
+    gamma, cipher_text, sigma = encrypted_data
     gamma_x, gamma_y = gamma
     
     print("=" * 40)
@@ -119,8 +205,8 @@ if __name__ == "__main__":
     print(f"Gamma (ponto na curva):")
     print(f"  x: {gamma_x}")
     print(f"  y: {gamma_y}")
-    print(f"\nCiphertext (em hexadecimal): {ciphertext.hex()}")
-    print(f"\nHash de r :{r_hash}")
+    print(f"\nCiphertext: {cipher_text}")
+    print(f"\nSigma: {sigma}")
     print("=" * 40)
 
     decrypted = elgamal.decrypt_message(private_key, encrypted_data)
@@ -129,4 +215,13 @@ if __name__ == "__main__":
     print("=" * 40)
     print(f"Sucesso? {plaintext == decrypted}")
     print("=" * 40)
-    
+
+    # Teste de manipulação do ciphertext
+    print("\nTestando integridade da cifra...")
+    try:
+        # Modificar o ciphertext
+        manipulated_data = ((gamma_x, gamma_y), cipher_text + 1, sigma)
+        decrypted = elgamal.decrypt_message(private_key, manipulated_data)
+        print("FALHA: Decifrou mensagem manipulada!")
+    except ValueError as e:
+        print(f"SUCESSO: {e}")
