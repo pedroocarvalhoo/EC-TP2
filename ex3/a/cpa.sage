@@ -16,18 +16,11 @@ class EdwardsElGamal:
         """
         self.lambda_security = security_param
         self.curve = Edwards25519()  
-        
-        """
-        Geramos o gerador , calculamos a ordem do grupo e o cofator
-        """
         self.G = self.curve.create_point()  
         self.L, self.h = self.curve.order()  
         self.ell = 8 
     
     def keygen(self):
-        """
-        Gera um par de chaves (privada,pública) para ElGamal a partir do gerador G
-        """
         s = random.randint(1, int(self.L) - 1)
         H_point = self.G.mult(s)  #(multiplicação escalar)
         return (H_point, s)
@@ -90,22 +83,16 @@ class EdwardsElGamal:
         """
         Encrypts a message using ElGamal with point encoding
         """
-        # Encode the message as a point
         M = self.encode_message(plaintext)
         
-        # Generate random value
         omega = random.randint(1, int(self.L) - 1)
-        
-        # Calculate Gamma = G * omega
+
         Gamma = self.G.mult(omega)
-        
-        # Calculate S = public_key * omega
+
         S = public_key.mult(omega)
-        
-        # Encrypt: C = M + S
+
         C = M.add(S)
         
-        # Return the ciphertext as (Gamma, C)
         return ((int(Gamma.x), int(Gamma.y)), (int(C.x), int(C.y)))
 
     def decrypt_message(self, private_key, encrypted_data):
@@ -114,20 +101,16 @@ class EdwardsElGamal:
         """
         (gamma_x, gamma_y), (c_x, c_y) = encrypted_data
         
-        # Recreate the points
         Gamma = self.curve.create_point(self.curve.K(gamma_x), self.curve.K(gamma_y))
         C = self.curve.create_point(self.curve.K(c_x), self.curve.K(c_y))
         
-        # Calculate S = Gamma * private_key
         S = Gamma.mult(private_key)
         
-        # Get the inverse of S
         S_inv = S.sim()
         
         # Decrypt: M = C - S = C + (-S)
         M = C.add(S_inv)
-        
-        # Decode the point back to a message
+
         return self.decode_message(M)
         
 if __name__ == "__main__":
