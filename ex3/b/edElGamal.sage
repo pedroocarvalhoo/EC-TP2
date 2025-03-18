@@ -129,33 +129,7 @@ class EdwardsElGamal:
         
         # Decode the point back to a message
         return self.decode_message(M)
-        
-if __name__ == "__main__":
-    elgamal = EdwardsElGamal(security_param=128)
     
-    public_key, private_key = elgamal.keygen()
+    def getL(self):
+        return self.L
     
-    plaintext = "Hello World!"
-    print("=" * 40)
-    print(f"Mensagem original: {plaintext}")
-    
-    encrypted_data = elgamal.encrypt_message(public_key, plaintext)
-    
-    gamma, cipher_point = encrypted_data
-    gamma_x, gamma_y = gamma
-    cipher_x, cipher_y = cipher_point
-    
-    print("=" * 40)
-    print("==== DADOS CIFRADOS ====")
-    print(f"Gamma (ponto na curva):")
-    print(f"  x: {gamma_x}")
-    print(f"  y: {gamma_y}")
-    print(f"\nCiphertext (ponto na curva):")
-    print(f"  x: {cipher_x}")
-    print(f"  y: {cipher_y}")
-
-    decrypted = elgamal.decrypt_message(private_key, encrypted_data)
-    print("=" * 40)
-    print(f"Mensagem decifrada: {decrypted}")
-    print(f"Sucesso? {plaintext == decrypted}")
-    print("=" * 40)
