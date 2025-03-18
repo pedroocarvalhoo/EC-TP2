@@ -150,7 +150,7 @@ class ed(object):
             Q.duplica()
         return A
     
-# Encoding para representar um ponto para bytes
+    # Encoding para representar um ponto para bytes
 def encode_points(x, y):
     # Verificar se os pontos pertecem a uma curva de edwards
     E = Ed(p, a, d, ed25519) # Criar instancia do edwards
@@ -408,8 +408,6 @@ def genSignature(Message, public_key, private_key, G, n):
     signature = R_encoded + S_bytes
     
     if (debug):
-        print("[SIGNATURE] R (hex):", R_encoded.hex())
-        print("[SIGNATURE] S (hex):", S_bytes.hex())
         print("[SIGNATURE] Signature (hex):" + str(signature))
               
     return signature
@@ -418,7 +416,6 @@ def verify_signature(message, signature, public_key, G, d, p, c, E):
     # Passo 1: "Decode the first half of the signature as a point R"    
     firsthalf = signature[:32]  # R (assinatura = R || S)
     r_point_x, r_point_y = decode_points(firsthalf, d, p)
-    print("[VERIFY] R (hex):", firsthalf.hex())
 
     # "Decode the public key into a point Q"
     Q_x, Q_y = decode_points(public_key, d, p)
@@ -427,7 +424,6 @@ def verify_signature(message, signature, public_key, G, d, p, c, E):
     # Passo 2: "Convert the second half of the signature (S) to an integer"
     secondhalf = signature[32:]
     s_int = int.from_bytes(secondhalf, byteorder="little")
-    print("[VERIFY] S (hex):", secondhalf.hex())
     
     # Verificar que s está no intervalo [0, n]
     n = ZZ(2**252 + 27742317777372353535851937790883648493)
@@ -463,9 +459,37 @@ def verify_signature(message, signature, public_key, G, d, p, c, E):
     # Comparar lado esquerdo e direito
     resultado = True
     if lhs.eq(rhs):
-        print("[VERIFY] Assinatura VÁLIDA!")
+        if(debug): print("[VERIFY] Assinatura VÁLIDA!")
     else:
-        print("[VERIFY] Assinatura INVÁLIDA!")
+        if(debug): print("[VERIFY] Assinatura INVÁLIDA!")
         resultado = False
     
     return resultado
+
+# Classe que implementa o edDSA (Edwards Digital Signature Algorithm)
+class EdDSA():
+    def __init__(self):
+        # Criação de uma instancia da curva de edwards
+        self.E = Ed(p, a, d, ed25519) # Criar instancia do edwards
+
+        # Parametros
+        self.G = ed(curve=self.E, x=ed25519["Px"], y=ed25519["Py"]) # Representa o gerador de uma curva de edwards
+        self.n = ZZ(2^252 + 27742317777372353535851937790883648493) # Ordem do subgrupo primo
+        self.c = 3
+
+        if(debug):
+            print("Ponto gerador utilizado:")
+            print("[EDDSA]:" + str(ed25519["Px"]))
+            print("[EDDSA]:" + str(ed25519["Py"]))
+    
+    # Permite gerar um par de chaves
+    def genKeyPair(self):
+        return genKeys(self.G)
+    
+    # Permite assinar uma mensagem
+    def sign(self, message, public_key, private_key):
+        return genSignature(message, public_key, private_key, self.G, int(self.n))
+
+    # Permite verificar uma assinatura
+    def verify(self, message, signature, public_key):
+        return verify_signature(message, signature, public_key, self.G, d, p, self.c, self.E)
