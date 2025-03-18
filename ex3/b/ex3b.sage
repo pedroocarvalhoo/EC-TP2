@@ -1,21 +1,23 @@
 # Estruturas criptográficas 2024-2025
 # Grupo 02 - Miguel Ângelo Martins Guimarães (pg55986) e Pedro Miguel Oliveira Carvalho (pg55997)
 
-# Imports
-import secrets
+# Load de ficheiros (SAGE)
 load("edElGamal.sage")   # Carregar o ficheiro que contem a implementação do EdwardsElGamal
-load('utils.sage')
+load('utils.sage') 
 load('edwards25519.sage')
+
+# Imports (python)
 import hashlib
 import os
 import random
 from sage.rings.finite_rings.finite_field_constructor import GF
-from edwards25519 import Edwards25519, EdPoint
+from edwards25519 import EdPoint
+
 print("[INFO] Imports realizados com sucesso!")
 
 ########################################################################################
+# Gera a matriz 'A' utilizando pontos na curva de edwards
 def matrixA(curve, lines, cols, seed):
-    """Gera matriz A usando pontos na curva"""
     K = curve.K
     A = matrix(K, lines, cols)
     for i in range(lines):
@@ -23,24 +25,21 @@ def matrixA(curve, lines, cols, seed):
             A[i,j] = K(H(str(seed) + str(i) + str(j), length=curve.L.nbits()))
     return A
 
+# Gera o vetor 'u' usando elementos do campo finito da curva
 def vectorU(curve, cols, seed):
-    """Gera vetor u usando elementos do campo finito da curva"""
     K = curve.K
     u = vector(K, cols)
     for i in range(cols):
         u[i] = K(H(str(seed) + str(i), length=curve.L.nbits()))
     return u
 
+# Gera o oblivious criterion utilizando os seguintes valores de input:
+# Parâmetros:
+# - n: número total de mensagens disponíveis
+# - kappa: número de mensagens a serem transferidas
+# - curve: instância da curva Edwards25519
 def generate_oblivious_criterion(n, kappa, curve):
-    """
-    Gera o critério oblivioso usando a curva Edwards
-    
-    Parâmetros:
-    - n: número total de mensagens disponíveis
-    - kappa: número de mensagens a serem transferidas
-    - curve: instância da curva Edwards25519
-    """
-    # Gerar seeds para aleatoriedade determinística
+    # Criar as seed
     rho1 = os.urandom(16).hex()
     rho2 = os.urandom(16).hex()
     
@@ -50,8 +49,8 @@ def generate_oblivious_criterion(n, kappa, curve):
     
     return A, u, (rho1, rho2)
 
+# Gera boas chaves para os índices selecionados
 def compute_goodKeys(selected_indices, n, edwards_elgamal):
-    """Gera boas chaves para os índices selecionados"""
     p_vector = [None] * n
     good_keys = {}
     
@@ -68,10 +67,8 @@ def compute_goodKeys(selected_indices, n, edwards_elgamal):
     
     return good_keys, tag, p_vector, secret
 
+# Completa o vetor p com pontos para os índices não selecionados
 def complete_p_vector(curve, A, u, selected_indices, p_vector):
-    """
-    Completa o vetor p com pontos para os índices não selecionados
-    """
     n = A.nrows()
     K = curve.K
     
@@ -103,14 +100,11 @@ def complete_p_vector(curve, A, u, selected_indices, p_vector):
         
     return p_vector
 
+# Gera um ponto com uma coordenada x aproximada
 def generate_point_with_x(curve, x_val):
     """Gera um ponto com coordenada x aproximada"""
-    # Mapear x_val para um valor que pode ser coordenada x de um ponto na curva
-    # Esse mapeamento deve ser determinístico mas difícil de inverter
-    
-    # Exemplo simplificado:
     hash_input = str(x_val)
-    for i in range(100):  # tentar diferentes valores
+    for i in range(100): # Tentar 100 valores diferentes
         candidate_x = curve.K(H(hash_input + str(i), length=curve.L.nbits()))
         try:
             # Verificar se pode ser coordenada x de um ponto
@@ -119,19 +113,19 @@ def generate_point_with_x(curve, x_val):
                 y = f_val.sqrt()
                 ec_point = curve.EC(candidate_x, y)
                 ed_x, ed_y = curve.ec2ed(ec_point)
+
                 # Armazenar o valor original para verificação
                 point = EdPoint(ed_x, ed_y, curve)
                 point.original_x = x_val  # adicionar atributo para verificação
+                
                 return point
         except:
             continue
     
     raise ValueError("Não foi possível encontrar um ponto com coordenada x próxima ao desejado")
 
+# Gera o vetor de consulta para o protocolo OT
 def generate_query_vector(A, u, selected_indices, edwards_elgamal):
-    """
-    Gera o vetor de consulta para o protocolo OT
-    """
     n, n_minus_kappa = A.dimensions()
     kappa = n - n_minus_kappa
     
@@ -147,6 +141,7 @@ def generate_query_vector(A, u, selected_indices, edwards_elgamal):
     
     return p_vector, tag, good_keys
 
+# Verifica o vetor de consulta
 def verify_criterion(p_vector, A, u, curve):
     K = curve.K
     n = len(p_vector)
@@ -162,14 +157,14 @@ def verify_criterion(p_vector, A, u, curve):
     u_vec = vector(K, u)
     return total == u_vec
 
+# Função de hash (Utilizando sha256)
 def H(value, length=32):
-    """Função hash"""
     return int.from_bytes(hashlib.sha256(str(value).encode()).digest(), byteorder='big') % (2^length)
 
+########################################################################################
+
+# Cifrar as mensagens utilizando o ElGamal com curvas de Edwards
 def encrypt_messages(messages, A, u, query_vector, tag, edwards_elgamal):
-    """
-    Cifra as mensagens usando ElGamal em curvas Edwards
-    """
     encrypted_messages = []
     
     for i in range(len(messages)):
@@ -177,10 +172,10 @@ def encrypt_messages(messages, A, u, query_vector, tag, edwards_elgamal):
             # A chave pública para este índice é o elemento do query_vector
             public_key = query_vector[i]
             
-            # Cifrar mensagem usando ElGamal em curvas Edwards
+            # Cifrar mensagem utilizando o ElGamal em curvas de Edwards
             encrypted_data = edwards_elgamal.encrypt_message(public_key, messages[i])
             
-            # Gerar hash para integridade, usando tag
+            # Gerar hash para garantir a integridade, utilizando a tag
             c_2 = H(str(encrypted_data) + str(tag.hex()))
             
             encrypted_messages.append({
@@ -193,10 +188,8 @@ def encrypt_messages(messages, A, u, query_vector, tag, edwards_elgamal):
     
     return encrypted_messages
 
+# Decifrar as mensagens utilizando elGamal edwards
 def decrypt_messages(encrypted_messages, selected_indices, good_keys, tag, edwards_elgamal):
-    """
-    Decifra as mensagens usando ElGamal em curvas Edwards
-    """
     decrypted_messages = {}
     
     for message_data in encrypted_messages:
@@ -232,7 +225,7 @@ def decrypt_messages(encrypted_messages, selected_indices, good_keys, tag, edwar
     return decrypted_messages
 
 ########################################################################################
-
+# Função main onde vai ser testado todo o codigo
 if __name__ == "__main__":
     """
     TESTE DO PROTOCOLO OBLIVIOUS TRANSFER k-OUT-OF-n COM CURVAS EDWARDS
