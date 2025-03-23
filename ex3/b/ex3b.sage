@@ -18,11 +18,11 @@ print("[INFO] Imports realizados com sucesso!")
 ########################################################################################
 # Gera a matriz 'A' utilizando pontos na curva de edwards
 def matrixA(curve, lines, cols, seed):
-    K = curve.K
+    K = curve.K # K = GF(self.p)
     A = matrix(K, lines, cols)
     for i in range(lines):
         for j in range(cols):
-            A[i,j] = K(H(str(seed) + str(i) + str(j), length=curve.L.nbits()))
+            A[i,j] = K(H(str(seed) + str(i) + str(j), length=curve.L.nbits())) 
     return A
 
 # Gera o vetor 'u' usando elementos do campo finito da curva
@@ -51,7 +51,7 @@ def generate_oblivious_criterion(n, kappa, curve):
 
 # Gera boas chaves para os índices selecionados
 def compute_goodKeys(selected_indices, n, edwards_elgamal):
-    p_vector = [None] * n
+    p_vector = [None] * n # Vetor chaves publicas
     good_keys = {}
     
     # Para cada índice selecionado, gerar par de chaves
@@ -67,8 +67,9 @@ def compute_goodKeys(selected_indices, n, edwards_elgamal):
     
     return good_keys, tag, p_vector, secret
 
-# Completa o vetor p com pontos para os índices não selecionados
+# Completa o vetor p com pontos para os índices não selecionados (A*x=u ou B*X=R)
 def complete_p_vector(curve, A, u, selected_indices, p_vector):
+    # Vamos resolver o sistema A*x=u ou B*X=R
     n = A.nrows()
     K = curve.K
     
@@ -83,7 +84,7 @@ def complete_p_vector(curve, A, u, selected_indices, p_vector):
             row = vector(K, A[i])
             R -= x_coord * row
             
-    # Criar matriz B para resolver o sistema
+    # Criar matriz B para resolver o sistema 
     B_rows = [vector(K, A[j]) for j in unselected_indices]
     B = matrix(K, B_rows)
     
@@ -105,7 +106,7 @@ def generate_point_with_x(curve, x_val):
     """Gera um ponto com coordenada x aproximada"""
     hash_input = str(x_val)
     for i in range(100): # Tentar 100 valores diferentes
-        candidate_x = curve.K(H(hash_input + str(i), length=curve.L.nbits()))
+        candidate_x = curve.K(H(hash_input + str(i), length=curve.L.nbits())) # Criar valor valido no campo finito
         try:
             # Verificar se pode ser coordenada x de um ponto
             f_val = curve.K(candidate_x**3 + curve.constants['a4']*candidate_x + curve.constants['a6'])
@@ -270,12 +271,12 @@ if __name__ == "__main__":
     print(f"Ordem da curva (L): {edwards_elgamal.L}")
     
     print("\nA gerar o Protocolo OT (A, u)...")
-    A, u, rho = generate_oblivious_criterion(n, kappa, curve)
+    A, u, rho = generate_oblivious_criterion(n, kappa, curve) # Criamos a matriz A e o vetor u
     
     print(f"Matriz A ({A.nrows()}×{A.ncols()}) gerada")
     print(f"Vetor u ({len(u)} elementos) gerado")
      
-    messages = [f"Mensagem {i+1}" for i in range(n)]
+    messages = [f"Mensagem {i+1}" for i in range(n)] # Gerar mensagens
     print("\nMensagens disponíveis:")
     for i, msg in enumerate(messages):
         print(f"  [{i}] {msg}")
@@ -285,7 +286,7 @@ if __name__ == "__main__":
     print("FASE 2: SELEÇÃO E CONSULTA (Receiver)")
     print("=" * 40)
     
-    selected_indices = sorted(random.sample(range(n), kappa))
+    selected_indices = sorted(random.sample(range(n), kappa)) # Escolher k índices aleatórios
     
     print(f"Receiver escolheu os índices: {selected_indices}")
     print(f"Mensagens que serão recuperadas:")
@@ -294,7 +295,7 @@ if __name__ == "__main__":
     
     # GERAR O VETOR DE CONSULTA
     print("\nA gerar vetor de consulta p...")
-    query_vector, tag, good_keys = generate_query_vector(A, u, selected_indices, edwards_elgamal)
+    query_vector, tag, good_keys = generate_query_vector(A, u, selected_indices, edwards_elgamal) 
     print(f"Vetor p gerado com {len(query_vector)} pontos na curva")
     
     # Verificar propriedade do vetor de consulta

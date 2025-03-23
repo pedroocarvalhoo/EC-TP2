@@ -1,21 +1,33 @@
-# EC-TP2
+# Cryptographic Structures - Practical Work #2
 
-Authors: Pedro Carvalho & Miguel Guimarães\
-Este trabalho usa SageMath nas suas implementações.
+**Authors:** Pedro Carvalho [(Github)](https://github.com/pedroocarvalhoo), Miguel Guimarães [(Github)](https://github.com/miguel-amg).
 
+**University of Minho** - Masters Degree in Software Engineering
 
-1. Pretende-se construir em torno de uma cifra assimétrica um conjunto de técnicas criptográficas destinadas a fins distintos. Apesar de todas as alíneas do problema poderem ser  respondidas com a maioria das cifras assimétricas clássicas ou pós-quânticas, neste problema vamos exemplificar o processo com uma técnica simples da família Diffie-Hellman nomeadamente a cifra assimétrica ElGamal com parâmetros de segurança $\,\lambda\,$.
-    1. Implemente um esquema  PKE $\,\mathsf{ElGamal}(\lambda)\,$ (ver Capítulo 4) num subgrupo de ordem prima $\,q\,$,  com $\,|q|\geq \lambda\,$, do grupo multiplicativo $\,\mathbb{F}^\ast_p\,$ com $\,p\,$ um primo que verifica $\,|p| \geq \lambda\times|\lambda|$ . Identifique o gerador de chaves e os algoritmos de cifra de decifra neste esquema. Identifique o núcleo deterministico do algoritmo de cifra.
-    2. Supondo que a cifra que implementou é IND-CPA segura (de novo Capítulo 4), usando a transformação de Fujisaki-Okamoto implemente um PKE que seja IND-CCA seguro.
-    3. A partir de (b) construa um esquema de KEM que seja IND-CCA seguro.
-    4. A partir de (b) construa uma implementação de um protocolo autenticado de “Oblivious Transfer” $\,\kappa-out-of-n\,$.
+**March 2025**
 
+***
 
-2. Construir uma classe Python que implemente o  EcDSA a partir do “standard” FIPS186-5
-    1. A implementação deve conter funções para assinar digitalmente e verificar a assinatura.
-    2. A implementação da classe deve usar  uma das “Twisted Edwards Curves” definidas no standard e escolhida  na iniciação da classe: a curva  “edwards25519” ou “edwards448”.
+### **Tasks:**
+**Task #1:** The aim is to build around an asymmetric cipher a set of cryptographic techniques designed for different purposes. Although all parts of the problem can be answered with most classical or post-quantum asymmetric ciphers, in this problem we will exemplify the process with a simple technique from the Diffie-Hellman family, namely the ElGamal asymmetric cipher with security parameters **λ**.
 
+1. Implement a PKE scheme **ElGamal(λ)** in a prime order subgroup **q**, with **|q|≥λ**, of the multiplicative group **F\*<sub>p** with **p** a prime who checks **|p|≥λ\*|λ|**. Identify the key generator and decryption cipher algorithms in this schematic. Identify the deterministic core of the encryption algorithm.
 
-3. Usando a experiência obtida na resolução dos problemas 1 e 2, e usando, ao invés  do grupo abeliano multiplicativo $\,\mathbb{F}_p^\ast\,$,  o  grupo abeliano aditivo que usou na pergunta 2,   
-    1. Construa ambas as versões  IND-CPA segura e IND-CCA segura do esquema de cifra ElGamal em curvas elípticas.
-    2. Construa uma implementação em curvas elípticas de um protocolo autenticado de “Oblivious Transfer” $\,\kappa$-out-of-$n\,$.
+2. Assuming the cipher you implemented is IND-CPA secure, using the Fujisaki-Okamoto transform implement a PKE that is IND-CCA secure.
+
+3. From (1.2) construct a KEM scheme that is IND-CCA secure.
+
+4. From (1.2) build an implementation of an authenticated *k-out-of-n* “Oblivious Transfer” protocol.
+
+**Task #2:** Build a Python class that implements EdDSA from the FIPS186-5 standard.
+
+1. The implementation must contain functions to digitally sign and verify the signature.
+
+2. The class implementation must use one of the “Twisted Edwards Curves” defined in the standard and chosen at class initiation: the **“edwards25519”** or **“edwards448”** curve.
+
+**Task #3:** Using the experience gained in solving problems 1 and 2, and using, instead of the multiplicative abelian group **F\*<sub>p**, the additive abelian group that you used in question 2:
+
+1. Construct both secure IND-CPA and secure IND-CCA versions of the ElGamal cipher scheme on elliptic curves.
+
+2. Build an elliptic curve implementation of an authenticated *k-out-of-n* “Oblivious Transfer” protocol.
+
